@@ -7,14 +7,15 @@ import type { GitRepositoryLike } from '../git/gitExtension';
  */
 export class CommitTreeItem extends vscode.TreeItem {
   constructor(public readonly repository: GitRepositoryLike) {
-    super('Commit Staged', vscode.TreeItemCollapsibleState.None);
+    super('Commit staged changes', vscode.TreeItemCollapsibleState.None);
 
+    this.description = 'Enter message';
     this.contextValue = 'changedFilesCommit';
     this.iconPath = new vscode.ThemeIcon('git-commit');
     this.tooltip = 'Commit staged changes';
     this.command = {
       command: 'scmRepositoryFilter.commitStaged',
-      title: 'Commit Staged',
+      title: 'Commit staged changes',
       arguments: [repository],
     };
   }

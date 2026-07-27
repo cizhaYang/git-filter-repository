@@ -111,6 +111,11 @@
           "group": "inline"
         },
         {
+          "command": "scmRepositoryFilter.push",
+          "when": "view == scmRepositoryFilter.changedFiles && viewItem == changedFilesPush",
+          "group": "inline"
+        },
+        {
           "command": "scmRepositoryFilter.stageChange",
           "when": "view == scmRepositoryFilter.changedFiles && (viewItem == changedFileWorkingTree || viewItem == changedFileUntracked)",
           "group": "inline"

@@ -48,5 +48,10 @@ test('extension manifest', () => {
       && item.when.includes('view == scmRepositoryFilter.changedFiles'));
   assert.ok(changedFilesCommitMenu);
   assert.match(changedFilesCommitMenu.when, /viewItem == changedFilesCommit/);
+  const changedFilesPushMenu = manifest.contributes.menus['view/item/context']
+    .find((item) => item.command === 'scmRepositoryFilter.push'
+      && item.when.includes('view == scmRepositoryFilter.changedFiles'));
+  assert.ok(changedFilesPushMenu);
+  assert.match(changedFilesPushMenu.when, /viewItem == changedFilesPush/);
   assert.ok(manifest.activationEvents.includes('onView:scmRepositoryFilter.changedRepositories'));
 });

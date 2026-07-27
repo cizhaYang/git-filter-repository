@@ -1,0 +1,54 @@
+{
+  "name": "scm-repository-filter",
+  "displayName": "SCM Repository Filter",
+  "publisher": "local",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Source Control"
+  ],
+  "activationEvents": [
+    "onView:scmRepositoryFilter.changedRepositories"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "views": {
+      "scm": [
+        {
+          "id": "scmRepositoryFilter.changedRepositories",
+          "name": "Changed Repositories"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "scmRepositoryFilter.refresh",
+        "title": "Refresh Changed Repositories"
+      },
+      {
+        "command": "scmRepositoryFilter.openRepository",
+        "title": "Open Repository"
+      }
+    ],
+    "viewsWelcome": [
+      {
+        "view": "scmRepositoryFilter.changedRepositories",
+        "contents": "No changed repositories were found."
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "check": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/vscode": "^1.95.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2",
+    "vitest": "^2.1.9"
+  }
+}

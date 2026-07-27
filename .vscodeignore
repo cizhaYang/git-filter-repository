@@ -1,0 +1,9 @@
+src/**
+test/**
+esbuild.mjs
+tsconfig.json
+vitest.config.ts
+package-lock.json
+.gitignore
+.superpowers/**
+docs/**

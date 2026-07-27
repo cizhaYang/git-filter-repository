@@ -2,7 +2,7 @@
   "name": "scm-repository-filter",
   "displayName": "SCM Repository Filter",
   "publisher": "local",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -155,12 +155,14 @@
   },
   "scripts": {
     "build": "node esbuild.mjs",
+    "package": "npm run build && vsce package",
     "check": "node ./node_modules/typescript/bin/tsc --noEmit",
     "test": "node --test"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
     "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.25.0",
     "typescript": "^5.8.2",
     "vitest": "^2.1.9"

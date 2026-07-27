@@ -8,7 +8,7 @@ export class RepositoryTreeItem extends vscode.TreeItem {
     public readonly repository: GitRepositoryLike,
     private readonly workspaceFolder?: vscode.WorkspaceFolder,
   ) {
-    super(path.basename(repository.rootUri.fsPath), vscode.TreeItemCollapsibleState.Collapsed);
+    super(path.basename(repository.rootUri.fsPath), vscode.TreeItemCollapsibleState.None);
 
     const changeCount = countRepositoryChanges(repository.state as RepositoryLikeState);
     this.description = workspaceFolder

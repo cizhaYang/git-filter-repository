@@ -19,6 +19,7 @@ import type { GitRepositoryLike } from './git/gitExtension';
 import { ChangedFilesProvider } from './views/changedFilesProvider';
 import { ChangedRepositoriesProvider } from './views/changedRepositoriesProvider';
 import { ChangeGroupTreeItem } from './views/changeGroupTreeItem';
+import { CommitTreeItem } from './views/commitTreeItem';
 import { FileChangeTreeItem } from './views/fileChangeTreeItem';
 import { RepositorySelectionState } from './views/repositorySelectionState';
 import { RepositoryTreeItem } from './views/repositoryTreeItem';
@@ -302,6 +303,9 @@ async function runGroupAction(
 
 function resolveRepositoryTarget(target: unknown): GitRepositoryLike | undefined {
   if (target instanceof RepositoryTreeItem) {
+    return target.repository;
+  }
+  if (target instanceof CommitTreeItem) {
     return target.repository;
   }
 

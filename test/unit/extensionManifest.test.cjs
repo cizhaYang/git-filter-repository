@@ -10,6 +10,7 @@ test('extension manifest', () => {
   assert.equal(manifest.contributes.views.scm[1].name, 'Changed Files');
   assert.deepEqual(manifest.extensionDependencies, ['vscode.git']);
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.openChange'));
+  assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.commitStaged'));
   for (const commandId of [
     'scmRepositoryFilter.commitStaged',
     'scmRepositoryFilter.pull',
@@ -42,5 +43,10 @@ test('extension manifest', () => {
     assert.ok(menu);
     assert.match(menu.when, /view == scmRepositoryFilter\.changedFiles/);
   }
+  const changedFilesCommitMenu = manifest.contributes.menus['view/item/context']
+    .find((item) => item.command === 'scmRepositoryFilter.commitStaged'
+      && item.when.includes('view == scmRepositoryFilter.changedFiles'));
+  assert.ok(changedFilesCommitMenu);
+  assert.match(changedFilesCommitMenu.when, /viewItem == changedFilesCommit/);
   assert.ok(manifest.activationEvents.includes('onView:scmRepositoryFilter.changedRepositories'));
 });

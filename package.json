@@ -12,6 +12,9 @@
   "activationEvents": [
     "onView:scmRepositoryFilter.changedRepositories"
   ],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "views": {
@@ -30,6 +33,10 @@
       {
         "command": "scmRepositoryFilter.openRepository",
         "title": "Open Repository"
+      },
+      {
+        "command": "scmRepositoryFilter.openChange",
+        "title": "Open Change"
       }
     ],
     "viewsWelcome": [

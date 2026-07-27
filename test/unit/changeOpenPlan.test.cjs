@@ -1,0 +1,46 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { getChangeOpenPlan } = require('../../dist/domain/changeOpenPlan.js');
+
+test('changeOpenPlan compares a working tree change with the index', () => {
+  const modifiedUri = { fsPath: '/workspace/ordering/src/index.ts' };
+  const plan = getChangeOpenPlan({
+    group: 'workingTree',
+    label: 'src/index.ts',
+    change: { uri: modifiedUri },
+  });
+
+  assert.deepEqual(plan, {
+    type: 'diff',
+    original: { uri: modifiedUri, ref: '~' },
+    modified: { uri: modifiedUri },
+  });
+});
+
+test('changeOpenPlan compares an index change with HEAD and the index', () => {
+  const modifiedUri = { fsPath: '/workspace/ordering/src/index.ts' };
+  const plan = getChangeOpenPlan({
+    group: 'index',
+    label: 'src/index.ts',
+    change: { uri: modifiedUri },
+  });
+
+  assert.deepEqual(plan, {
+    type: 'diff',
+    original: { uri: modifiedUri, ref: 'HEAD' },
+    modified: { uri: modifiedUri, ref: '' },
+  });
+});
+
+test('changeOpenPlan keeps native git command when available', () => {
+  const command = { command: 'git.openChange', arguments: ['resource'] };
+  assert.deepEqual(getChangeOpenPlan({
+    group: 'workingTree',
+    label: 'src/index.ts',
+    change: { command },
+    command,
+  }), {
+    type: 'command',
+    command,
+  });
+});

@@ -11,7 +11,7 @@ export class FileChangeTreeItem extends vscode.TreeItem {
 
     this.description = getGroupDescription(file.group);
     this.tooltip = getFileTooltip(file);
-    this.contextValue = 'changedFile';
+    this.contextValue = getFileContextValue(file.group);
     this.iconPath = new vscode.ThemeIcon(getFileIcon(file.group));
     this.command = {
       command: 'scmRepositoryFilter.openChange',
@@ -29,11 +29,26 @@ function getGroupDescription(group: RepositoryChangeFile['group']): string {
       return 'conflict';
     case 'workingTree':
       return 'working tree';
+    case 'untracked':
+      return 'untracked';
   }
 }
 
 function getFileIcon(group: RepositoryChangeFile['group']): string {
   return group === 'merge' ? 'warning' : 'diff';
+}
+
+function getFileContextValue(group: RepositoryChangeFile['group']): string {
+  switch (group) {
+    case 'index':
+      return 'changedFileIndex';
+    case 'workingTree':
+      return 'changedFileWorkingTree';
+    case 'merge':
+      return 'changedFileMerge';
+    case 'untracked':
+      return 'changedFileUntracked';
+  }
 }
 
 function getFileTooltip(file: RepositoryChangeFile): string {

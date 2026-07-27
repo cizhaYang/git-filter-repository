@@ -1,12 +1,11 @@
 import * as vscode from 'vscode';
-import { getRepositoryChangeFiles } from '../domain/repositoryChangeFiles';
 import { getChangedRepositories } from '../domain/repositoryQueries';
 import { getChangedRepositoriesMessage } from '../domain/repositoryViewState';
 import type { GitApiLike, GitRepositoryLike } from '../git/gitExtension';
-import { FileChangeTreeItem } from './fileChangeTreeItem';
+import { RepositorySelectionState } from './repositorySelectionState';
 import { RepositoryTreeItem } from './repositoryTreeItem';
 
-export type ChangedRepositoriesTreeItem = RepositoryTreeItem | FileChangeTreeItem;
+export type ChangedRepositoriesTreeItem = RepositoryTreeItem;
 
 export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<ChangedRepositoriesTreeItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ChangedRepositoriesTreeItem | undefined>();
@@ -16,6 +15,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
 
   constructor(
     private readonly gitApi: GitApiLike | undefined,
+    private readonly selectionState: RepositorySelectionState,
     private readonly logger?: Pick<vscode.OutputChannel, 'appendLine'>,
   ) {
     if (!gitApi) {
@@ -25,6 +25,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     for (const repository of gitApi.repositories) {
       this.watchRepository(repository);
     }
+    this.selectionState.reconcile(getChangedRepositories(gitApi.repositories));
 
     // Git 状态和仓库列表都可能变化；这里把“刷新视图”和“管理仓库级监听”合并到同一组回调里。
     this.subscriptions.push(
@@ -40,6 +41,9 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   refresh(): void {
+    if (this.gitApi) {
+      this.selectionState.reconcile(getChangedRepositories(this.gitApi.repositories));
+    }
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
@@ -55,11 +59,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   getChildren(element?: ChangedRepositoriesTreeItem): ChangedRepositoriesTreeItem[] {
-    if (element instanceof RepositoryTreeItem) {
-      return getRepositoryChangeFiles(element.repository).map((file) => new FileChangeTreeItem(element.repository, file));
-    }
-
-    if (!this.gitApi) {
+    if (element || !this.gitApi) {
       return [];
     }
 

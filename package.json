@@ -10,7 +10,8 @@
     "Source Control"
   ],
   "activationEvents": [
-    "onView:scmRepositoryFilter.changedRepositories"
+    "onView:scmRepositoryFilter.changedRepositories",
+    "onView:scmRepositoryFilter.changedFiles"
   ],
   "extensionDependencies": [
     "vscode.git"
@@ -22,6 +23,10 @@
         {
           "id": "scmRepositoryFilter.changedRepositories",
           "name": "Changed Repositories"
+        },
+        {
+          "id": "scmRepositoryFilter.changedFiles",
+          "name": "Changed Files"
         }
       ]
     },
@@ -37,12 +42,104 @@
       {
         "command": "scmRepositoryFilter.openChange",
         "title": "Open Change"
+      },
+      {
+        "command": "scmRepositoryFilter.commitStaged",
+        "title": "Commit Staged",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "scmRepositoryFilter.pull",
+        "title": "Pull",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "scmRepositoryFilter.push",
+        "title": "Push",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "scmRepositoryFilter.selectRepository",
+        "title": "Select Repository"
+      },
+      {
+        "command": "scmRepositoryFilter.stageChange",
+        "title": "Stage",
+        "icon": "$(add)"
+      },
+      {
+        "command": "scmRepositoryFilter.unstageChange",
+        "title": "Unstage",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "scmRepositoryFilter.discardChange",
+        "title": "Discard",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "scmRepositoryFilter.stageAllChanges",
+        "title": "Stage All Changes",
+        "icon": "$(add)"
+      },
+      {
+        "command": "scmRepositoryFilter.unstageAllChanges",
+        "title": "Unstage All Changes",
+        "icon": "$(remove)"
       }
     ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "scmRepositoryFilter.commitStaged",
+          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.pull",
+          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.push",
+          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.stageChange",
+          "when": "view == scmRepositoryFilter.changedFiles && (viewItem == changedFileWorkingTree || viewItem == changedFileUntracked)",
+          "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.unstageChange",
+          "when": "view == scmRepositoryFilter.changedFiles && viewItem == changedFileIndex",
+          "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.discardChange",
+          "when": "view == scmRepositoryFilter.changedFiles && (viewItem == changedFileWorkingTree || viewItem == changedFileUntracked)",
+          "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.stageAllChanges",
+          "when": "view == scmRepositoryFilter.changedFiles && viewItem == changedGroupWorkingTree",
+          "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.unstageAllChanges",
+          "when": "view == scmRepositoryFilter.changedFiles && viewItem == changedGroupIndex",
+          "group": "inline"
+        }
+      ]
+    },
     "viewsWelcome": [
       {
         "view": "scmRepositoryFilter.changedRepositories",
         "contents": "No changed repositories were found."
+      },
+      {
+        "view": "scmRepositoryFilter.changedFiles",
+        "contents": "Select a changed repository to view its files."
       }
     ]
   },

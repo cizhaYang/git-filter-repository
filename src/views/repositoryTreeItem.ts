@@ -17,5 +17,10 @@ export class RepositoryTreeItem extends vscode.TreeItem {
     this.tooltip = `${repository.rootUri.fsPath}\n${changeCount} changes`;
     this.contextValue = 'changedRepository';
     this.iconPath = new vscode.ThemeIcon('repo');
+    this.command = {
+      command: 'scmRepositoryFilter.selectRepository',
+      title: 'Select Repository',
+      arguments: [repository],
+    };
   }
 }

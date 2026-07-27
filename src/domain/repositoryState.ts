@@ -1,10 +1,11 @@
 /**
- * VS Code Git 扩展把仓库状态拆成三类变更；第一版只关心“有没有改动”和“改动总数”。
+ * VS Code Git 扩展把仓库状态拆成四类变更；untrackedChanges 对旧测试数据保持可选。
  */
 export interface RepositoryLikeState {
   indexChanges: unknown[];
   workingTreeChanges: unknown[];
   mergeChanges: unknown[];
+  untrackedChanges?: unknown[];
 }
 
 export function hasRepositoryChanges(state: RepositoryLikeState): boolean {
@@ -12,8 +13,11 @@ export function hasRepositoryChanges(state: RepositoryLikeState): boolean {
 }
 
 /**
- * 这里不区分暂存、未暂存和冲突，第一版的过滤视图只需要知道仓库是否应该出现。
+ * 过滤仓库时四类变更都算作 dirty，避免未跟踪文件被过滤掉。
  */
 export function countRepositoryChanges(state: RepositoryLikeState): number {
-  return state.indexChanges.length + state.workingTreeChanges.length + state.mergeChanges.length;
+  return state.indexChanges.length
+    + state.workingTreeChanges.length
+    + state.mergeChanges.length
+    + (state.untrackedChanges?.length ?? 0);
 }

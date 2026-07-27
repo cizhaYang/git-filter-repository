@@ -7,12 +7,14 @@ test('repositoryState', () => {
   assert.equal(hasRepositoryChanges({ indexChanges: [{}], workingTreeChanges: [], mergeChanges: [] }), true);
   assert.equal(hasRepositoryChanges({ indexChanges: [], workingTreeChanges: [{}], mergeChanges: [] }), true);
   assert.equal(hasRepositoryChanges({ indexChanges: [], workingTreeChanges: [], mergeChanges: [{}] }), true);
+  assert.equal(hasRepositoryChanges({ indexChanges: [], workingTreeChanges: [], mergeChanges: [], untrackedChanges: [{}] }), true);
   assert.equal(
     countRepositoryChanges({
       indexChanges: [{}, {}],
       workingTreeChanges: [{}],
       mergeChanges: [{}, {}],
+      untrackedChanges: [{}],
     }),
-    5,
+    6,
   );
 });

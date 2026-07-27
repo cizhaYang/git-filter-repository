@@ -67,6 +67,10 @@ export function getChangeOpenPlan(file: RepositoryChangeFile): ChangeOpenPlan {
     };
   }
 
+  if (file.group === 'untracked' && modifiedUri) {
+    return { type: 'openFile', uri: modifiedUri };
+  }
+
   if (originalUri && modifiedUri) {
     return {
       type: 'diff',

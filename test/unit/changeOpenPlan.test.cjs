@@ -44,3 +44,15 @@ test('changeOpenPlan keeps native git command when available', () => {
     command,
   });
 });
+
+test('changeOpenPlan opens an untracked file directly', () => {
+  const uri = { fsPath: '/workspace/ordering/src/new.ts' };
+  assert.deepEqual(getChangeOpenPlan({
+    group: 'untracked',
+    label: 'src/new.ts',
+    change: { uri },
+  }), {
+    type: 'openFile',
+    uri,
+  });
+});

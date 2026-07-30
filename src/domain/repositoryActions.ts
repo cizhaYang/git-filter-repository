@@ -22,13 +22,33 @@ export function shouldShowFileActionProgress(action: RepositoryFileAction): bool
 }
 
 /**
- * 当前 VS Code Git API 会通过 onDidRunGitStatus 通知状态变化；没有该事件时才需要
+ * 当前 VS Code Git API 会通过 repository.state.onDidChange 通知状态变化；没有该事件时才需要
  * 操作完成后的主动刷新，避免同一次 Git 操作重复重建两个 Tree View。
  */
 export function needsFallbackRefresh(
-  repository: Pick<GitRepositoryLike, 'onDidRunGitStatus'>,
+  repository: { state?: Pick<GitRepositoryLike['state'], 'onDidChange'> },
 ): boolean {
-  return !repository.onDidRunGitStatus;
+  return !repository.state?.onDidChange;
+}
+
+/**
+ * Tree View 读取的是 Git 扩展缓存的 state；主动执行 status 才能在事件缺失时拿到最新仓库状态。
+ */
+export async function refreshRepositoryStatuses(
+  repositories: readonly Pick<GitRepositoryLike, 'status'>[],
+): Promise<void> {
+  let nextRepositoryIndex = 0;
+  const workerCount = Math.min(4, repositories.length);
+
+  // 大型工作区可能同时包含上百个仓库；限制并发可避免内置 Git 扩展取消拥挤的 status 操作。
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextRepositoryIndex < repositories.length) {
+      const repository = repositories[nextRepositoryIndex];
+      nextRepositoryIndex += 1;
+      await repository?.status?.();
+    }
+  });
+  await Promise.all(workers);
 }
 
 /**

@@ -33,7 +33,8 @@
     "commands": [
       {
         "command": "scmRepositoryFilter.refresh",
-        "title": "Refresh Changed Repositories"
+        "title": "Refresh Changed Repositories",
+        "icon": "$(refresh)"
       },
       {
         "command": "scmRepositoryFilter.openRepository",
@@ -89,6 +90,13 @@
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "scmRepositoryFilter.refresh",
+          "when": "view == scmRepositoryFilter.changedRepositories",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "scmRepositoryFilter.commitStaged",

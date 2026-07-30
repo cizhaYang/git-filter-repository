@@ -9,6 +9,10 @@ test('extension manifest', () => {
   assert.equal(manifest.contributes.views.scm[1].id, 'scmRepositoryFilter.changedFiles');
   assert.equal(manifest.contributes.views.scm[1].name, 'Changed Files');
   assert.deepEqual(manifest.extensionDependencies, ['vscode.git']);
+  const refreshViewMenu = manifest.contributes.menus['view/title']
+    .find((item) => item.command === 'scmRepositoryFilter.refresh');
+  assert.ok(refreshViewMenu);
+  assert.match(refreshViewMenu.when, /view == scmRepositoryFilter\.changedRepositories/);
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.openChange'));
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.commitStaged'));
   for (const commandId of [

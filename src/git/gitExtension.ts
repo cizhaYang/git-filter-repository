@@ -15,6 +15,7 @@ export interface GitRepositoryLike {
     workingTreeChanges: unknown[];
     mergeChanges: unknown[];
     untrackedChanges?: unknown[];
+    onDidChange?: vscode.Event<void>;
   };
   commit(message: string, options?: { all?: boolean }): Promise<void>;
   pull(): Promise<void>;
@@ -22,7 +23,7 @@ export interface GitRepositoryLike {
   add(paths: string[]): Promise<void>;
   revert(paths: string[]): Promise<void>;
   clean(paths: string[]): Promise<void>;
-  onDidRunGitStatus?: vscode.Event<void>;
+  status?: () => Promise<void>;
 }
 
 /**

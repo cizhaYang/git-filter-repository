@@ -31,6 +31,17 @@ import { RepositoryTreeItem } from './views/repositoryTreeItem';
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const gitApi = await getGitApi();
   const outputChannel = vscode.window.createOutputChannel('SCM Repository Filter');
+  const usesOpenEditorDetection = vscode.workspace.workspaceFolders?.some((folder) =>
+    vscode.workspace
+      .getConfiguration('git', folder.uri)
+      .get<string | boolean>('autoRepositoryDetection') === 'openEditors',
+  ) ?? false;
+  if (usesOpenEditorDetection) {
+    // 插件只消费内置 Git API；该设置意味着未打开编辑器的嵌套仓库不会进入 API。
+    outputChannel.appendLine(
+      '[config] git.autoRepositoryDetection is "openEditors"; only repositories associated with open editors can be shown.',
+    );
+  }
   const selectionState = new RepositorySelectionState();
   const repositoriesProvider = new ChangedRepositoriesProvider(gitApi, selectionState, outputChannel);
   const filesProvider = new ChangedFilesProvider(selectionState);
@@ -55,7 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     filesTreeView,
     repositoriesProvider,
     filesProvider,
-    vscode.commands.registerCommand('scmRepositoryFilter.refresh', () => repositoriesProvider.refresh()),
+    vscode.commands.registerCommand('scmRepositoryFilter.refresh', () => repositoriesProvider.refreshFromGitStatus()),
     vscode.commands.registerCommand('scmRepositoryFilter.openChange', async (repository: GitRepositoryLike, file: RepositoryChangeFile) => {
       await openChange(repository, file);
     }),
@@ -105,6 +116,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     filesProvider.onDidChangeTreeData(() => syncMessage()),
     selectionState.onDidChange(() => syncMessage()),
+    // Git 扩展事件之外，工作区文件事件覆盖保存、创建、删除和重命名等本地变化。
+    vscode.workspace.onDidSaveTextDocument((document) => repositoriesProvider.scheduleStatusRefreshForUri(document.uri)),
+    vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri))),
+    vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri))),
+    vscode.workspace.onDidRenameFiles((event) => {
+      for (const file of event.files) {
+        repositoriesProvider.scheduleStatusRefreshForUri(file.oldUri);
+        repositoriesProvider.scheduleStatusRefreshForUri(file.newUri);
+      }
+    }),
   );
 
   syncMessage();

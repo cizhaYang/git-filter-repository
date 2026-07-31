@@ -2,11 +2,9 @@ import * as vscode from 'vscode';
 import { getRepositoryChangeGroups } from '../domain/repositoryChangeFiles';
 import { FileChangeTreeItem } from './fileChangeTreeItem';
 import { ChangeGroupTreeItem } from './changeGroupTreeItem';
-import { CommitTreeItem } from './commitTreeItem';
-import { PushTreeItem } from './pushTreeItem';
 import { RepositorySelectionState } from './repositorySelectionState';
 
-export type ChangedFilesTreeItem = ChangeGroupTreeItem | FileChangeTreeItem | CommitTreeItem | PushTreeItem;
+export type ChangedFilesTreeItem = ChangeGroupTreeItem | FileChangeTreeItem;
 
 export class ChangedFilesProvider implements vscode.TreeDataProvider<ChangedFilesTreeItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ChangedFilesTreeItem | undefined>();
@@ -48,8 +46,6 @@ export class ChangedFilesProvider implements vscode.TreeDataProvider<ChangedFile
     return [
       ...getRepositoryChangeGroups(repository, { includeEmpty: ['workingTree'] })
         .map((group) => new ChangeGroupTreeItem(repository, group)),
-      new CommitTreeItem(repository),
-      new PushTreeItem(repository),
     ];
   }
 

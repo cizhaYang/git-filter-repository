@@ -47,15 +47,11 @@ test('extension manifest', () => {
     assert.ok(menu);
     assert.match(menu.when, /view == scmRepositoryFilter\.changedFiles/);
   }
-  const changedFilesCommitMenu = manifest.contributes.menus['view/item/context']
-    .find((item) => item.command === 'scmRepositoryFilter.commitStaged'
-      && item.when.includes('view == scmRepositoryFilter.changedFiles'));
-  assert.ok(changedFilesCommitMenu);
-  assert.match(changedFilesCommitMenu.when, /viewItem == changedFilesCommit/);
-  const changedFilesPushMenu = manifest.contributes.menus['view/item/context']
-    .find((item) => item.command === 'scmRepositoryFilter.push'
-      && item.when.includes('view == scmRepositoryFilter.changedFiles'));
-  assert.ok(changedFilesPushMenu);
-  assert.match(changedFilesPushMenu.when, /viewItem == changedFilesPush/);
+  assert.equal(manifest.contributes.menus['view/item/context']
+    .some((item) => item.command === 'scmRepositoryFilter.commitStaged'
+      && item.when.includes('view == scmRepositoryFilter.changedFiles')), false);
+  assert.equal(manifest.contributes.menus['view/item/context']
+    .some((item) => item.command === 'scmRepositoryFilter.push'
+      && item.when.includes('view == scmRepositoryFilter.changedFiles')), false);
   assert.ok(manifest.activationEvents.includes('onView:scmRepositoryFilter.changedRepositories'));
 });

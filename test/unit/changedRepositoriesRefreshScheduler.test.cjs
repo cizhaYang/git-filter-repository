@@ -87,6 +87,17 @@ function createRepository(name, status) {
   };
 }
 
+async function createProvider(ChangedRepositoriesProvider, repositories, interval = 1_000) {
+  const repositoryByPath = new Map(repositories.map((repository) => [repository.rootUri.fsPath, repository]));
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: { scan: async () => [...repositoryByPath.keys()] },
+    repositoryFactory: (root) => repositoryByPath.get(root),
+  }, { reconcile() {} }, undefined, interval);
+  await provider.initialize();
+  return provider;
+}
+
 test('a completed status refresh does not cancel another repository waiting to refresh', async () => {
   const ChangedRepositoriesProvider = loadProviderWithVscodeStub();
   let finishFirstStatus;
@@ -94,19 +105,18 @@ test('a completed status refresh does not cancel another repository waiting to r
     finishFirstStatus = resolve;
   });
   let secondStatusCalls = 0;
-  const first = createRepository('first', () => firstStatusFinished);
+  let blockFirstStatus = false;
+  const first = createRepository('first', async () => {
+    if (blockFirstStatus) {
+      await firstStatusFinished;
+    }
+  });
   const second = createRepository('selection', async () => {
     secondStatusCalls += 1;
   });
-  const gitApi = {
-    repositories: [first, second],
-    onDidOpenRepository: createEvent(),
-    onDidCloseRepository: createEvent(),
-  };
-  const selectionState = {
-    reconcile() {},
-  };
-  const provider = new ChangedRepositoriesProvider(gitApi, selectionState);
+  const provider = await createProvider(ChangedRepositoriesProvider, [first, second]);
+  secondStatusCalls = 0;
+  blockFirstStatus = true;
 
   provider.scheduleStatusRefresh([first]);
   await delay(170);
@@ -121,13 +131,8 @@ test('a completed status refresh does not cancel another repository waiting to r
 test('a missed Git state event is reconciled by polling repository state', async () => {
   const ChangedRepositoriesProvider = loadProviderWithVscodeStub();
   const repository = createRepository('ordering', async () => {});
-  const gitApi = {
-    repositories: [repository],
-    onDidOpenRepository: createEvent(),
-    onDidCloseRepository: createEvent(),
-  };
+  const provider = await createProvider(ChangedRepositoriesProvider, [repository], 20);
   let treeRefreshes = 0;
-  const provider = new ChangedRepositoriesProvider(gitApi, { reconcile() {} }, undefined, 20);
   const subscription = provider.onDidChangeTreeData(() => {
     treeRefreshes += 1;
   });
@@ -147,13 +152,8 @@ test('polling detects a changed file replacement when the change count stays equ
     uri: { toString: () => 'file:///workspace/ordering/first.js' },
     status: 'MODIFIED',
   });
-  const gitApi = {
-    repositories: [repository],
-    onDidOpenRepository: createEvent(),
-    onDidCloseRepository: createEvent(),
-  };
   let treeRefreshes = 0;
-  const provider = new ChangedRepositoriesProvider(gitApi, { reconcile() {} }, undefined, 20);
+  const provider = await createProvider(ChangedRepositoriesProvider, [repository], 20);
   context.after(() => provider.dispose());
   const subscription = provider.onDidChangeTreeData(() => {
     treeRefreshes += 1;
@@ -181,12 +181,9 @@ test('a nested file refreshes only its deepest owning repository', async () => {
   const child = createRepository('ordering', async () => {
     childStatusCalls += 1;
   });
-  const gitApi = {
-    repositories: [parent, child],
-    onDidOpenRepository: createEvent(),
-    onDidCloseRepository: createEvent(),
-  };
-  const provider = new ChangedRepositoriesProvider(gitApi, { reconcile() {} }, undefined, 10_000);
+  const provider = await createProvider(ChangedRepositoriesProvider, [parent, child], 10_000);
+  parentStatusCalls = 0;
+  childStatusCalls = 0;
 
   provider.scheduleStatusRefreshForUri({ fsPath: '/workspace/ordering/index.js' });
   await delay(220);

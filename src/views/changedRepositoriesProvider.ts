@@ -3,11 +3,19 @@ import * as path from 'node:path';
 import { refreshRepositoryStatuses } from '../domain/repositoryActions';
 import { getChangedRepositories } from '../domain/repositoryQueries';
 import { getChangedRepositoriesMessage } from '../domain/repositoryViewState';
-import type { GitApiLike, GitRepositoryLike } from '../git/gitExtension';
+import { GitCli } from '../git/gitCli';
+import { LocalGitRepository, type GitRepositoryLike } from '../git/localGitRepository';
+import { WorkspaceRepositoryScanner } from '../git/workspaceRepositoryScanner';
 import { RepositorySelectionState } from './repositorySelectionState';
 import { RepositoryTreeItem } from './repositoryTreeItem';
 
 export type ChangedRepositoriesTreeItem = RepositoryTreeItem;
+
+export interface ChangedRepositoriesProviderOptions {
+  workspaceRoots: readonly string[];
+  scanner?: Pick<WorkspaceRepositoryScanner, 'scan'>;
+  repositoryFactory?: (rootPath: string) => GitRepositoryLike;
+}
 
 export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<ChangedRepositoriesTreeItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ChangedRepositoriesTreeItem | undefined>();
@@ -15,57 +23,103 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   private readonly subscriptions: vscode.Disposable[] = [];
   private readonly repositorySubscriptions = new Map<string, vscode.Disposable[]>();
   private readonly pendingStatusRepositories = new Set<GitRepositoryLike>();
+  private readonly repositories = new Map<string, GitRepositoryLike>();
+  private readonly workspaceRoots: readonly string[];
+  private readonly scanner: Pick<WorkspaceRepositoryScanner, 'scan'>;
+  private readonly repositoryFactory: (rootPath: string) => GitRepositoryLike;
   private treeRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private statusRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private repositoryScanTimer: ReturnType<typeof setTimeout> | undefined;
   private stateReconciliationTimer: ReturnType<typeof setInterval> | undefined;
   private repositoryStateSignature = '';
   private refreshAllStatuses = false;
+  private gitAvailable = true;
 
   constructor(
-    private readonly gitApi: GitApiLike | undefined,
+    options: ChangedRepositoriesProviderOptions,
     private readonly selectionState: RepositorySelectionState,
     private readonly logger?: Pick<vscode.OutputChannel, 'appendLine'>,
     stateReconciliationIntervalMs = 1_000,
   ) {
-    if (!gitApi) {
-      this.logger?.appendLine('[activate] Built-in Git API is unavailable.');
-      return;
+    this.workspaceRoots = options.workspaceRoots;
+    this.scanner = options.scanner ?? new WorkspaceRepositoryScanner({ logger });
+    this.repositoryFactory = options.repositoryFactory ?? ((rootPath) => new LocalGitRepository(rootPath, new GitCli()));
+
+    // 工作区级监听覆盖外部新建或删除的嵌套仓库；仓库级监听只负责已有仓库的 status 刷新。
+    for (const workspaceRoot of this.workspaceRoots) {
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspaceRoot, '**/*'),
+      );
+      const scheduleScan = () => this.scheduleRepositoryScan();
+      this.subscriptions.push(
+        watcher,
+        watcher.onDidCreate(scheduleScan),
+        watcher.onDidDelete(scheduleScan),
+      );
     }
 
-    for (const repository of gitApi.repositories) {
-      this.watchRepository(repository);
-    }
-    this.selectionState.reconcile(getChangedRepositories(gitApi.repositories));
-    this.repositoryStateSignature = getRepositoryStateSignature(gitApi.repositories);
-    this.logger?.appendLine(`[activate] Watching ${gitApi.repositories.length} Git repositories.`);
-
-    // 文件系统与 Git 状态事件都可能被 VS Code 合并；轻量对账只读取缓存，不额外执行 git status。
+    // 对账只读取本地 state 缓存，补偿 Git CLI 状态事件之外的 UI 刷新，不会额外启动 Git 进程。
     if (stateReconciliationIntervalMs > 0) {
       this.stateReconciliationTimer = setInterval(
         () => this.reconcileRepositoryState(),
         stateReconciliationIntervalMs,
       );
     }
+  }
 
-    // Git 状态和仓库列表都可能变化；这里把“刷新视图”和“管理仓库级监听”合并到同一组回调里。
-    this.subscriptions.push(
-      gitApi.onDidOpenRepository((repository) => {
+  async initialize(): Promise<void> {
+    await this.refreshRepositories();
+  }
+
+  async refreshRepositories(): Promise<void> {
+    let repositoryRoots: string[];
+    try {
+      repositoryRoots = await this.scanner.scan(this.workspaceRoots);
+    } catch (error) {
+      this.logger?.appendLine(`[scan] Unable to scan workspace repositories: ${String(error)}`);
+      repositoryRoots = [];
+    }
+
+    const nextRepositories = new Map<string, GitRepositoryLike>();
+    for (const rootPath of repositoryRoots) {
+      const key = path.normalize(path.resolve(rootPath));
+      const existing = this.repositories.get(key);
+      const repository = existing ?? this.repositoryFactory(key);
+      nextRepositories.set(key, repository);
+      if (!existing) {
         this.watchRepository(repository);
-        this.refresh();
-      }),
-      gitApi.onDidCloseRepository((repository) => {
+      }
+    }
+
+    for (const [key, repository] of this.repositories) {
+      if (!nextRepositories.has(key)) {
         this.unwatchRepository(repository);
-        this.refresh();
-      }),
-    );
+      }
+    }
+
+    this.repositories.clear();
+    for (const [key, repository] of nextRepositories) {
+      this.repositories.set(key, repository);
+    }
+    this.logger?.appendLine(`[activate] Watching ${this.repositories.size} workspace Git repositories.`);
+    await this.refreshFromGitStatus([...this.repositories.values()]);
+  }
+
+  private scheduleRepositoryScan(): void {
+    if (this.repositoryScanTimer !== undefined) {
+      return;
+    }
+    this.repositoryScanTimer = setTimeout(() => {
+      this.repositoryScanTimer = undefined;
+      void this.refreshRepositories();
+    }, 150);
   }
 
   refresh(): void {
     this.cancelTreeRefresh();
-    if (this.gitApi) {
-      this.repositoryStateSignature = getRepositoryStateSignature(this.gitApi.repositories);
-      this.selectionState.reconcile(getChangedRepositories(this.gitApi.repositories));
-    }
+    const repositories = [...this.repositories.values()];
+    this.repositoryStateSignature = getRepositoryStateSignature(repositories);
+    this.selectionState.reconcile(getChangedRepositories(repositories));
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
@@ -73,7 +127,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
    * 文件事件可能在一次保存中连续触发；延迟一个短周期合并刷新，避免嵌套仓库重复重建树。
    */
   scheduleRefresh(): void {
-    if (!this.gitApi || this.treeRefreshTimer !== undefined) {
+    if (this.treeRefreshTimer !== undefined) {
       return;
     }
 
@@ -87,11 +141,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
    * 编辑器保存事件只关联受影响的嵌套仓库，避免保存一个文件时触发全部仓库的 Git status。
    */
   scheduleStatusRefreshForUri(uri: vscode.Uri): void {
-    if (!this.gitApi) {
-      return;
-    }
-
-    const repositories = getDeepestRepositoriesForPath(uri.fsPath, this.gitApi.repositories);
+    const repositories = getDeepestRepositoriesForPath(uri.fsPath, [...this.repositories.values()]);
     if (repositories.length > 0) {
       this.logger?.appendLine(
         `[file] ${uri.fsPath} -> ${repositories.map((repository) => repository.rootUri.fsPath).join(', ')}`,
@@ -101,13 +151,9 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   /**
-   * 文件事件触发时先让 Git 扫描工作区，再读取 state，解决 Git 状态事件未发出的情况。
+   * 文件事件先让 Git 重新计算状态，再读取本地 state，解决外部修改没有 Git 事件的问题。
    */
   scheduleStatusRefresh(repositories?: readonly GitRepositoryLike[]): void {
-    if (!this.gitApi) {
-      return;
-    }
-
     if (!repositories) {
       this.refreshAllStatuses = true;
     } else {
@@ -132,16 +178,15 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   async refreshFromGitStatus(repositories?: readonly GitRepositoryLike[]): Promise<void> {
-    if (!this.gitApi) {
-      this.refresh();
-      return;
-    }
-
-    const repositoriesToRefresh = repositories ?? this.gitApi.repositories;
+    const repositoriesToRefresh = repositories ?? [...this.repositories.values()];
     this.logger?.appendLine(`[status] Refreshing ${repositoriesToRefresh.length} repositories.`);
     try {
       await refreshRepositoryStatuses(repositoriesToRefresh);
+      this.gitAvailable = true;
     } catch (error) {
+      if (isGitUnavailable(error)) {
+        this.gitAvailable = false;
+      }
       this.logger?.appendLine(`Unable to refresh repository status: ${String(error)}`);
     }
     this.logger?.appendLine(`[status] Refresh completed for ${repositoriesToRefresh.length} repositories.`);
@@ -150,8 +195,11 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
 
   getMessage(): string | undefined {
     return getChangedRepositoriesMessage(
-      Boolean(this.gitApi),
-      this.gitApi ? getChangedRepositories(this.gitApi.repositories).length : 0,
+      {
+        workspaceAvailable: this.workspaceRoots.length > 0,
+        gitAvailable: this.gitAvailable,
+      },
+      getChangedRepositories([...this.repositories.values()]).length,
     );
   }
 
@@ -160,13 +208,12 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   getChildren(element?: ChangedRepositoriesTreeItem): ChangedRepositoriesTreeItem[] {
-    if (element || !this.gitApi) {
+    if (element) {
       return [];
     }
 
     const items: RepositoryTreeItem[] = [];
-
-    for (const repository of getChangedRepositories(this.gitApi.repositories)) {
+    for (const repository of getChangedRepositories([...this.repositories.values()])) {
       try {
         items.push(new RepositoryTreeItem(
           repository,
@@ -176,8 +223,29 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
         this.logger?.appendLine(`Skipped repository ${repository.rootUri.fsPath}: ${String(error)}`);
       }
     }
-
     return items;
+  }
+
+  dispose(): void {
+    this.cancelTreeRefresh();
+    this.cancelStatusRefresh();
+    if (this.repositoryScanTimer !== undefined) {
+      clearTimeout(this.repositoryScanTimer);
+      this.repositoryScanTimer = undefined;
+    }
+    if (this.stateReconciliationTimer !== undefined) {
+      clearInterval(this.stateReconciliationTimer);
+      this.stateReconciliationTimer = undefined;
+    }
+    this.onDidChangeTreeDataEmitter.dispose();
+    for (const repository of this.repositories.values()) {
+      this.unwatchRepository(repository);
+    }
+    this.repositories.clear();
+    for (const subscription of this.subscriptions) {
+      subscription.dispose();
+    }
+    this.subscriptions.length = 0;
   }
 
   private watchRepository(repository: GitRepositoryLike): void {
@@ -187,13 +255,6 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     }
 
     const subscriptions: vscode.Disposable[] = [];
-
-    // 内置 Git API 把仓库状态事件挂在 state 上；status 完成后再刷新，才能读到最新文件列表。
-    if (repository.state.onDidChange) {
-      subscriptions.push(repository.state.onDidChange(() => this.scheduleRefresh()));
-    }
-
-    // Git 状态事件在不同场景下并不完全一致；仓库级文件监听覆盖编辑器外部修改和未跟踪文件创建。
     const fileWatcher = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(repository.rootUri, '**/*'),
     );
@@ -210,7 +271,6 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
       fileWatcher.onDidCreate(onFileEvent),
       fileWatcher.onDidDelete(onFileEvent),
     );
-
     this.repositorySubscriptions.set(key, subscriptions);
     this.subscriptions.push(...subscriptions);
   }
@@ -221,32 +281,16 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     if (!subscriptions) {
       return;
     }
-
     for (const subscription of subscriptions) {
       subscription.dispose();
     }
     this.repositorySubscriptions.delete(key);
   }
 
-  dispose(): void {
-    this.cancelTreeRefresh();
-    this.cancelStatusRefresh();
-    if (this.stateReconciliationTimer !== undefined) {
-      clearInterval(this.stateReconciliationTimer);
-      this.stateReconciliationTimer = undefined;
-    }
-    this.onDidChangeTreeDataEmitter.dispose();
-    this.repositorySubscriptions.clear();
-    for (const subscription of this.subscriptions) {
-      subscription.dispose();
-    }
-  }
-
   private cancelTreeRefresh(): void {
     if (this.treeRefreshTimer === undefined) {
       return;
     }
-
     clearTimeout(this.treeRefreshTimer);
     this.treeRefreshTimer = undefined;
   }
@@ -261,23 +305,18 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   private reconcileRepositoryState(): void {
-    if (!this.gitApi) {
-      return;
-    }
-
-    const nextSignature = getRepositoryStateSignature(this.gitApi.repositories);
+    const repositories = [...this.repositories.values()];
+    const nextSignature = getRepositoryStateSignature(repositories);
     if (nextSignature === this.repositoryStateSignature) {
       return;
     }
-
-    this.logger?.appendLine(`[state] Repository changes updated: ${getChangedRepositoriesSummary(this.gitApi.repositories)}`);
+    this.logger?.appendLine(`[state] Repository changes updated: ${getChangedRepositoriesSummary(repositories)}`);
     this.refresh();
   }
 }
 
 function isGitMetadataPath(filePath: string): boolean {
-  const segments = filePath.split(path.sep);
-  return segments.includes('.git');
+  return filePath.split(path.sep).includes('.git');
 }
 
 function isPathWithinRepository(filePath: string, repositoryRootPath: string): boolean {
@@ -287,7 +326,7 @@ function isPathWithinRepository(filePath: string, repositoryRootPath: string): b
 }
 
 /**
- * 嵌套仓库中的文件只属于路径最深的仓库；父仓库也命中会造成重复 status 和原生 SCM 抖动。
+ * 嵌套仓库中的文件只属于路径最深的仓库；父仓库也命中会造成重复 status 和多次刷新。
  */
 function getDeepestRepositoriesForPath(
   filePath: string,
@@ -305,9 +344,6 @@ function getDeepestRepositoriesForPath(
   );
 }
 
-/**
- * 签名只包含视图依赖的缓存字段，轮询不会访问磁盘，也不会触发新的 Git 进程。
- */
 function getRepositoryStateSignature(repositories: readonly GitRepositoryLike[]): string {
   return repositories
     .map((repository) => [
@@ -329,7 +365,6 @@ function getChangeSignature(change: unknown): string {
   if (!change || typeof change !== 'object') {
     return String(change);
   }
-
   const resource = change as {
     uri?: unknown;
     originalUri?: unknown;
@@ -359,4 +394,11 @@ function getChangedRepositoriesSummary(repositories: readonly GitRepositoryLike[
   return changedRepositories.length === 0
     ? 'none'
     : changedRepositories.map((repository) => repository.rootUri.fsPath).join(', ');
+}
+
+function isGitUnavailable(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'code' in error) {
+    return (error as { code?: unknown }).code === 'ENOENT';
+  }
+  return String(error).includes('ENOENT');
 }

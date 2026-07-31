@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { countRepositoryChanges, type RepositoryLikeState } from '../domain/repositoryState';
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 
 export class RepositoryTreeItem extends vscode.TreeItem {
   constructor(

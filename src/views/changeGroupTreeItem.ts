@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { RepositoryChangeGroup, RepositoryChangeGroupFiles } from '../domain/repositoryChangeFiles';
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 
 export class ChangeGroupTreeItem extends vscode.TreeItem {
   constructor(

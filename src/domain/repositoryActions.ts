@@ -1,4 +1,4 @@
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 import type { RepositoryChangeFile } from './repositoryChangeFiles';
 
 export type RepositoryAction = 'commit' | 'pull' | 'push';
@@ -22,8 +22,7 @@ export function shouldShowFileActionProgress(action: RepositoryFileAction): bool
 }
 
 /**
- * 当前 VS Code Git API 会通过 repository.state.onDidChange 通知状态变化；没有该事件时才需要
- * 操作完成后的主动刷新，避免同一次 Git 操作重复重建两个 Tree View。
+ * CLI 仓库没有内置 Git 的 state 事件；没有事件时由操作完成后的主动刷新保证两个 Tree View 同步。
  */
 export function needsFallbackRefresh(
   repository: { state?: Pick<GitRepositoryLike['state'], 'onDidChange'> },
@@ -32,7 +31,7 @@ export function needsFallbackRefresh(
 }
 
 /**
- * Tree View 读取的是 Git 扩展缓存的 state；主动执行 status 才能在事件缺失时拿到最新仓库状态。
+ * Tree View 读取的是本地仓库缓存；主动执行 status 才能在文件事件缺失时拿到最新仓库状态。
  */
 export async function refreshRepositoryStatuses(
   repositories: readonly Pick<GitRepositoryLike, 'status'>[],
@@ -83,7 +82,7 @@ export async function runRepositoryAction(
 }
 
 /**
- * 文件操作必须根据所在分组选择 Git API，避免把工作区文件误当成 staged 文件处理。
+ * 文件操作必须根据所在分组选择仓库适配器，避免把工作区文件误当成 staged 文件处理。
  */
 export async function runRepositoryFileAction(
   repository: Pick<GitRepositoryLike, 'add' | 'revert' | 'clean'>,

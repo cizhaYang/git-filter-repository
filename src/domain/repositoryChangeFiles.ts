@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 
 export type RepositoryChangeGroup = 'index' | 'workingTree' | 'merge' | 'untracked';
 

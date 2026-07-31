@@ -8,7 +8,7 @@ test('extension manifest', () => {
   assert.equal(manifest.contributes.views.scm[0].name, 'Changed Repositories');
   assert.equal(manifest.contributes.views.scm[1].id, 'scmRepositoryFilter.changedFiles');
   assert.equal(manifest.contributes.views.scm[1].name, 'Changed Files');
-  assert.deepEqual(manifest.extensionDependencies, ['vscode.git']);
+  assert.equal(manifest.extensionDependencies?.includes('vscode.git') ?? false, false);
   const refreshViewMenu = manifest.contributes.menus['view/title']
     .find((item) => item.command === 'scmRepositoryFilter.refresh');
   assert.ok(refreshViewMenu);

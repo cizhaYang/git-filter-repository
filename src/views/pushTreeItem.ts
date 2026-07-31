@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 
 /**
  * Push 与提交入口保持同样的操作行形式，点击后直接调用现有远程仓库命令。

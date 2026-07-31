@@ -1,9 +1,18 @@
-/**
- * 视图文案只表达当前过滤结果，不掺杂仓库内容本身，避免 UI 层里散落硬编码分支。
- */
-export function getChangedRepositoriesMessage(hasGitApi: boolean, changedRepositoryCount: number): string | undefined {
-  if (!hasGitApi) {
-    return 'Enable the built-in Git extension to view changed repositories.';
+export interface RepositoryViewAvailability {
+  workspaceAvailable: boolean;
+  gitAvailable: boolean;
+}
+
+/** 视图文案区分工作区、Git CLI 和过滤结果，避免把环境错误误报成“没有改动”。 */
+export function getChangedRepositoriesMessage(
+  availability: RepositoryViewAvailability,
+  changedRepositoryCount: number,
+): string | undefined {
+  if (!availability.workspaceAvailable) {
+    return 'Open a workspace to scan Git repositories.';
+  }
+  if (!availability.gitAvailable) {
+    return 'Git CLI is unavailable. Install Git to view changed repositories.';
   }
 
   return changedRepositoryCount === 0 ? 'No changed repositories were found.' : undefined;

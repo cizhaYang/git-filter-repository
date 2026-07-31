@@ -1,4 +1,4 @@
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 
 export type RepositorySelectionListener = (repository: GitRepositoryLike | undefined) => void;
 

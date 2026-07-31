@@ -51,7 +51,7 @@ Expected: FAIL because `src/git/workspaceRepositoryScanner.ts` and its compiled 
 
 - [ ] **Step 3: Implement the scanner and stable local repository interface**
 
-实现 `WorkspaceRepositoryScanner`，固定默认排除 `.git`、`node_modules`、`dist`、`out`、`.vscode`，按规范化绝对路径去重；识别 `.git` 目录和 `.git` 文件后停止向下遍历。扫描错误记录到可选 logger，但不让单个目录错误中断全局扫描。
+实现 `WorkspaceRepositoryScanner`，固定默认排除 `.git`、`node_modules`、`dist`、`out`、`.vscode`，按规范化绝对路径去重；识别 `.git` 目录或 `.git` 文件后记录当前仓库，但继续向下遍历以发现父仓库中的嵌套仓库。扫描错误记录到可选 logger，但不让单个目录错误中断全局扫描。
 
 ```ts
 export interface WorkspaceRepositoryScannerOptions {

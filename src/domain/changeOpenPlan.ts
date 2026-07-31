@@ -16,6 +16,14 @@ export type ChangeOpenPlan =
   | { type: 'openFile'; uri: UriLike }
   | { type: 'unavailable' };
 
+/** CLI 没有 Git 扩展的 `~` 和空 ref 约定，二者都表示 index 内容。 */
+export function getGitBlobRef(ref: string | undefined): string | undefined {
+  if (ref === undefined) {
+    return undefined;
+  }
+  return ref === '' || ref === '~' ? ':' : ref;
+}
+
 const GIT_STATUS = {
   INDEX_ADDED: 1,
   INDEX_DELETED: 2,

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 
 /**
  * Changed Files 不能直接嵌入输入框，因此用一个根节点作为提交入口；点击后由命令

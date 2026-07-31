@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { RepositoryChangeFile } from '../domain/repositoryChangeFiles';
-import type { GitRepositoryLike } from '../git/gitExtension';
+import type { GitRepositoryLike } from '../git/localGitRepository';
 
 export class FileChangeTreeItem extends vscode.TreeItem {
   constructor(

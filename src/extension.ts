@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getChangeOpenPlan, type ChangeDiffSide } from './domain/changeOpenPlan';
+import { getChangeOpenPlan, getGitBlobRef } from './domain/changeOpenPlan';
 import {
   hasStagedChanges,
   needsFallbackRefresh,
@@ -14,8 +14,8 @@ import {
 } from './domain/repositoryActions';
 import { getRepositoryDisplayName } from './domain/repositoryQueries';
 import { getRepositoryChangeFiles, type RepositoryChangeFile } from './domain/repositoryChangeFiles';
-import { getGitApi } from './git/gitExtension';
-import type { GitRepositoryLike } from './git/gitExtension';
+import type { GitRepositoryLike } from './git/localGitRepository';
+import { toRepositoryRelativePath } from './git/localGitRepositoryPaths';
 import { ChangedFilesProvider } from './views/changedFilesProvider';
 import { ChangedRepositoriesProvider } from './views/changedRepositoriesProvider';
 import { ChangeGroupTreeItem } from './views/changeGroupTreeItem';
@@ -26,24 +26,18 @@ import { RepositorySelectionState } from './views/repositorySelectionState';
 import { RepositoryTreeItem } from './views/repositoryTreeItem';
 
 /**
- * 这里把 Git API、TreeDataProvider 和命令统一装配起来，后续 Git 操作也继续挂在这里。
+ * 这里把工作区扫描器、TreeDataProvider 和命令统一装配起来，所有 Git 操作都走本地 CLI。
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const gitApi = await getGitApi();
   const outputChannel = vscode.window.createOutputChannel('SCM Repository Filter');
-  const usesOpenEditorDetection = vscode.workspace.workspaceFolders?.some((folder) =>
-    vscode.workspace
-      .getConfiguration('git', folder.uri)
-      .get<string | boolean>('autoRepositoryDetection') === 'openEditors',
-  ) ?? false;
-  if (usesOpenEditorDetection) {
-    // 插件只消费内置 Git API；该设置意味着未打开编辑器的嵌套仓库不会进入 API。
-    outputChannel.appendLine(
-      '[config] git.autoRepositoryDetection is "openEditors"; only repositories associated with open editors can be shown.',
-    );
-  }
   const selectionState = new RepositorySelectionState();
-  const repositoriesProvider = new ChangedRepositoriesProvider(gitApi, selectionState, outputChannel);
+  const repositoriesProvider = new ChangedRepositoriesProvider({
+    workspaceRoots: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+  }, selectionState, outputChannel);
+  outputChannel.appendLine(
+    `[activate] Workspace roots: ${vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).join(', ') || 'none'}`,
+  );
+  await repositoriesProvider.initialize();
   const filesProvider = new ChangedFilesProvider(selectionState);
   const repositoriesTreeView = vscode.window.createTreeView(
     'scmRepositoryFilter.changedRepositories',
@@ -118,9 +112,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     selectionState.onDidChange(() => syncMessage()),
     // Git 扩展事件之外，工作区文件事件覆盖保存、创建、删除和重命名等本地变化。
     vscode.workspace.onDidSaveTextDocument((document) => repositoriesProvider.scheduleStatusRefreshForUri(document.uri)),
-    vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri))),
-    vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri))),
+    vscode.workspace.onDidCreateFiles((event) => {
+      void repositoriesProvider.refreshRepositories();
+      event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri));
+    }),
+    vscode.workspace.onDidDeleteFiles((event) => {
+      void repositoriesProvider.refreshRepositories();
+      event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri));
+    }),
     vscode.workspace.onDidRenameFiles((event) => {
+      void repositoriesProvider.refreshRepositories();
       for (const file of event.files) {
         repositoriesProvider.scheduleStatusRefreshForUri(file.oldUri);
         repositoriesProvider.scheduleStatusRefreshForUri(file.newUri);
@@ -144,12 +145,7 @@ async function openChange(repository: GitRepositoryLike, file: RepositoryChangeF
   }
 
   if (plan.type === 'diff' && plan.original && plan.modified) {
-    await vscode.commands.executeCommand(
-      'vscode.diff',
-      toGitUri(plan.original),
-      toGitUri(plan.modified),
-      title,
-    );
+    await openCliDiff(repository, plan.original, plan.modified, title);
     return;
   }
 
@@ -159,6 +155,39 @@ async function openChange(repository: GitRepositoryLike, file: RepositoryChangeF
   }
 
   vscode.window.showWarningMessage(`Unable to open change for ${file.label}.`);
+}
+
+async function openCliDiff(
+  repository: GitRepositoryLike,
+  original: { uri: { fsPath: string }; ref?: string },
+  modified: { uri: { fsPath: string }; ref?: string },
+  title: string,
+): Promise<void> {
+  const [originalUri, modifiedUri] = await Promise.all([
+    getCliDiffSideUri(repository, original),
+    getCliDiffSideUri(repository, modified),
+  ]);
+  await vscode.commands.executeCommand('vscode.diff', originalUri, modifiedUri, title);
+}
+
+async function getCliDiffSideUri(
+  repository: GitRepositoryLike,
+  side: { uri: { fsPath: string }; ref?: string },
+): Promise<vscode.Uri> {
+  if (side.ref === undefined) {
+    return side.uri as vscode.Uri;
+  }
+
+  const relativePath = toRepositoryRelativePath(repository.rootUri.fsPath, side.uri.fsPath);
+  const ref = getGitBlobRef(side.ref);
+  if (!ref) {
+    return side.uri as vscode.Uri;
+  }
+
+  // 历史版本和 index 内容通过临时文档打开，避免依赖 Git 扩展提供的 git: URI 文档提供器。
+  const content = await repository.readBlob(ref, relativePath);
+  const document = await vscode.workspace.openTextDocument({ content });
+  return document.uri;
 }
 
 async function commitStaged(
@@ -385,18 +414,4 @@ function getFileActionLabel(action: RepositoryFileAction): string {
 
 function getFilesActionLabel(action: RepositoryFilesAction): string {
   return action === 'stageAll' ? 'Stage all changes' : 'Unstage all changes';
-}
-
-function toGitUri(side: ChangeDiffSide): vscode.Uri {
-  const uri = side.uri as vscode.Uri;
-  if (side.ref === undefined) {
-    return uri;
-  }
-
-  // 内置 Git 扩展的 text document provider 通过 path/ref 读取历史版本；
-  // 空 ref 是 index，~ 是 index 的工作树对比基准，HEAD 是提交版本。
-  return uri.with({
-    scheme: 'git',
-    query: JSON.stringify({ path: uri.fsPath, ref: side.ref }),
-  });
 }

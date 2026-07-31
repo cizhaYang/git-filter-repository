@@ -13,9 +13,6 @@
     "onView:scmRepositoryFilter.changedRepositories",
     "onView:scmRepositoryFilter.changedFiles"
   ],
-  "extensionDependencies": [
-    "vscode.git"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "views": {

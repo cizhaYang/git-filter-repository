@@ -17,10 +17,12 @@ VS Code 插件：在 Source Control 侧边栏新增 `Changed Repositories` 和 `
 - 每秒对账一次本地 Git 状态缓存；文件变化时通过 Git CLI 刷新对应仓库状态。
 - 支持手动刷新命令和 `Changed Repositories` 标题栏刷新按钮；刷新时会主动执行 Git status。
 - 多仓库手动刷新最多并发执行 4 个 Git status，避免大型工作区出现命令拥挤或取消。
+- 超过 32 个仓库的大型工作区会先显示扫描到的仓库，再后台增量刷新 Git 状态，不会阻塞视图初始化。
 - 仓库节点箭头只负责展开/折叠，不再默认跳转目录。
 - `Changed Files` 下方提供 `Commit staged changes` 和 `Push to remote` 操作入口。
 - 提交入口使用 VS Code 原生输入框填写 commit message。
 - `Changed Repositories` 仓库节点支持 `Commit Staged`、`Pull`、`Push` 操作。
+- 仓库节点支持 `View Git Graph`，可直接查看该仓库的提交历史、分支和合并记录。
 - `Commit Staged` 只提交已经暂存的文件，不会自动暂存未暂存文件。
 - `Pull` 和 `Push` 使用当前分支配置的默认远程。
 - Stage、Unstage 成功后不显示提示；操作失败时显示错误提示并记录日志。
@@ -32,6 +34,7 @@ VS Code 插件：在 Source Control 侧边栏新增 `Changed Repositories` 和 `
 - `Commit Staged`：必须先暂存文件，再输入提交信息；提交只包含 Git index 中的文件。
 - `Pull`：拉取当前分支默认远程。
 - `Push`：推送当前分支默认远程。
+- `View Git Graph`：打开右键选中的仓库历史。该功能需要预先安装并启用 [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph) 扩展；多仓库工作区中会将选中仓库作为 Git Graph 的目标。
 
 操作完成后视图会自动刷新；失败信息会显示在 VS Code 提示中，并记录到 `SCM Repository Filter` 输出通道。
 

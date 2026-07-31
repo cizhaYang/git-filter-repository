@@ -13,9 +13,13 @@ export type ChangedRepositoriesTreeItem = RepositoryTreeItem;
 
 export interface ChangedRepositoriesProviderOptions {
   workspaceRoots: readonly string[];
-  scanner?: Pick<WorkspaceRepositoryScanner, 'scan'>;
+  scanner?: Pick<WorkspaceRepositoryScanner, 'scan'>
+    & Partial<Pick<WorkspaceRepositoryScanner, 'scanWorkspaceRoots'>>;
   repositoryFactory?: (rootPath: string) => GitRepositoryLike;
 }
+
+// 超过这个数量时，初始化不能等待全部 Git status；先建立树视图，再在后台逐仓库刷新。
+const ASYNC_STATUS_REFRESH_THRESHOLD = 32;
 
 export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<ChangedRepositoriesTreeItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ChangedRepositoriesTreeItem | undefined>();
@@ -25,7 +29,8 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   private readonly pendingStatusRepositories = new Set<GitRepositoryLike>();
   private readonly repositories = new Map<string, GitRepositoryLike>();
   private readonly workspaceRoots: readonly string[];
-  private readonly scanner: Pick<WorkspaceRepositoryScanner, 'scan'>;
+  private readonly scanner: Pick<WorkspaceRepositoryScanner, 'scan'>
+    & Partial<Pick<WorkspaceRepositoryScanner, 'scanWorkspaceRoots'>>;
   private readonly repositoryFactory: (rootPath: string) => GitRepositoryLike;
   private treeRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private statusRefreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -68,6 +73,22 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   async initialize(): Promise<void> {
+    if (this.scanner.scanWorkspaceRoots) {
+      try {
+        const workspaceRepositories = await this.scanner.scanWorkspaceRoots(this.workspaceRoots);
+        if (workspaceRepositories.length > 0) {
+          const repositories = this.replaceRepositories(workspaceRepositories);
+          this.refresh();
+          // 根仓库状态独立刷新，嵌套仓库扫描不会阻塞它进入 Changed Repositories。
+          void this.refreshFromGitStatus(repositories);
+        }
+      } catch (error) {
+        this.logger?.appendLine(`[scan] Unable to inspect workspace root repositories: ${String(error)}`);
+      }
+      // 全量扫描只补充嵌套仓库；大目录遍历放到后台，避免首次打开视图一直 loading。
+      void this.refreshRepositories();
+      return;
+    }
     await this.refreshRepositories();
   }
 
@@ -80,6 +101,20 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
       repositoryRoots = [];
     }
 
+    const repositories = this.replaceRepositories(repositoryRoots);
+    this.logger?.appendLine(`[activate] Watching ${this.repositories.size} workspace Git repositories.`);
+    this.refresh();
+    if (repositories.length > ASYNC_STATUS_REFRESH_THRESHOLD) {
+      void this.refreshFromGitStatus(repositories);
+      return;
+    }
+    await this.refreshFromGitStatus(repositories);
+  }
+
+  /**
+   * 全量扫描结果与已有仓库对象合并，保留已完成的状态缓存和文件监听，避免后台扫描覆盖根仓库的首屏结果。
+   */
+  private replaceRepositories(repositoryRoots: readonly string[]): GitRepositoryLike[] {
     const nextRepositories = new Map<string, GitRepositoryLike>();
     for (const rootPath of repositoryRoots) {
       const key = path.normalize(path.resolve(rootPath));
@@ -101,8 +136,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     for (const [key, repository] of nextRepositories) {
       this.repositories.set(key, repository);
     }
-    this.logger?.appendLine(`[activate] Watching ${this.repositories.size} workspace Git repositories.`);
-    await this.refreshFromGitStatus([...this.repositories.values()]);
+    return [...this.repositories.values()];
   }
 
   private scheduleRepositoryScan(): void {
@@ -179,9 +213,17 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
 
   async refreshFromGitStatus(repositories?: readonly GitRepositoryLike[]): Promise<void> {
     const repositoriesToRefresh = repositories ?? [...this.repositories.values()];
-    this.logger?.appendLine(`[status] Refreshing ${repositoriesToRefresh.length} repositories.`);
+    this.logger?.appendLine(`[status] Refreshing ${repositoriesToRefresh.length} repositories (fast scan).`);
     try {
-      await refreshRepositoryStatuses(repositoriesToRefresh);
+      // 先用 normal 避免大型仓库递归展开所有未跟踪文件；只有候选改动仓库才需要完整文件列表。
+      await refreshRepositoryStatuses(repositoriesToRefresh, 'normal', () => this.scheduleRefresh());
+      const changedRepositories = getChangedRepositories(repositoriesToRefresh);
+      if (changedRepositories.length > 0) {
+        this.logger?.appendLine(
+          `[status] Loading full untracked files for ${changedRepositories.length} changed repositories.`,
+        );
+        await refreshRepositoryStatuses(changedRepositories, 'all', () => this.scheduleRefresh());
+      }
       this.gitAvailable = true;
     } catch (error) {
       if (isGitUnavailable(error)) {

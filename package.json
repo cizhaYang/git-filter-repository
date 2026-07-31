@@ -38,6 +38,11 @@
         "title": "Open Repository"
       },
       {
+        "command": "scmRepositoryFilter.openGitGraph",
+        "title": "View Git Graph",
+        "icon": "$(history)"
+      },
+      {
         "command": "scmRepositoryFilter.openChange",
         "title": "Open Change"
       },
@@ -109,6 +114,11 @@
           "command": "scmRepositoryFilter.push",
           "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
           "group": "inline"
+        },
+        {
+          "command": "scmRepositoryFilter.openGitGraph",
+          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "group": "navigation"
         },
         {
           "command": "scmRepositoryFilter.stageChange",

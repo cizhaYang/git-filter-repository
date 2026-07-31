@@ -24,6 +24,25 @@ test('git cli runs status in the repository root and converts the output', async
   assert.equal(state.workingTreeChanges[0].path, 'src/index.ts');
 });
 
+test('git cli supports a fast status mode that does not enumerate every untracked file', async () => {
+  const calls = [];
+  const cli = new GitCli(async (file, args) => {
+    calls.push({ file, args });
+    return { stdout: '', stderr: '' };
+  });
+
+  await cli.readStatus('/workspace/repo', 'normal');
+
+  assert.deepEqual(calls[0].args, [
+    '-C',
+    '/workspace/repo',
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=normal',
+  ]);
+});
+
 test('git cli passes file operation paths after the separator', async () => {
   const calls = [];
   const cli = new GitCli(async (file, args) => {

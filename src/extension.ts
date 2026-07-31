@@ -14,6 +14,8 @@ import {
 } from './domain/repositoryActions';
 import { getRepositoryDisplayName } from './domain/repositoryQueries';
 import { getRepositoryChangeFiles, type RepositoryChangeFile } from './domain/repositoryChangeFiles';
+import { openRepositoryGitGraph } from './domain/gitGraph';
+import { GIT_BLOB_DOCUMENT_SCHEME, GitBlobDocumentProvider } from './git/gitBlobDocumentProvider';
 import type { GitRepositoryLike } from './git/localGitRepository';
 import { toRepositoryRelativePath } from './git/localGitRepositoryPaths';
 import { ChangedFilesProvider } from './views/changedFilesProvider';
@@ -37,6 +39,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   await repositoriesProvider.initialize();
   const filesProvider = new ChangedFilesProvider(selectionState);
+  const gitBlobDocumentProvider = new GitBlobDocumentProvider();
+  const gitBlobDocumentRegistration = vscode.workspace.registerTextDocumentContentProvider(
+    GIT_BLOB_DOCUMENT_SCHEME,
+    gitBlobDocumentProvider,
+  );
   const repositoriesTreeView = vscode.window.createTreeView(
     'scmRepositoryFilter.changedRepositories',
     { treeDataProvider: repositoriesProvider },
@@ -58,15 +65,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     filesTreeView,
     repositoriesProvider,
     filesProvider,
+    gitBlobDocumentProvider,
+    gitBlobDocumentRegistration,
     vscode.commands.registerCommand('scmRepositoryFilter.refresh', () => repositoriesProvider.refreshFromGitStatus()),
     vscode.commands.registerCommand('scmRepositoryFilter.openChange', async (repository: GitRepositoryLike, file: RepositoryChangeFile) => {
-      await openChange(repository, file);
+      await openChange(repository, file, gitBlobDocumentProvider);
     }),
     vscode.commands.registerCommand('scmRepositoryFilter.selectRepository', (target: unknown) => {
       const repository = resolveRepositoryTarget(target);
       if (repository) {
         selectionState.select(repository);
       }
+    }),
+    vscode.commands.registerCommand('scmRepositoryFilter.openGitGraph', async (target: unknown) => {
+      const repository = resolveRepositoryTarget(target);
+      if (!repository) {
+        vscode.window.showErrorMessage('No Git repository was selected.');
+        return;
+      }
+      await openRepositoryGitGraph(repository.rootUri, {
+        executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
+        showErrorMessage: (message) => vscode.window.showErrorMessage(message),
+      });
     }),
     vscode.commands.registerCommand('scmRepositoryFilter.commitStaged', async (target: unknown) => {
       const repository = resolveRepositoryTarget(target);
@@ -132,7 +152,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {}
 
-async function openChange(repository: GitRepositoryLike, file: RepositoryChangeFile): Promise<void> {
+async function openChange(
+  repository: GitRepositoryLike,
+  file: RepositoryChangeFile,
+  gitBlobDocumentProvider: GitBlobDocumentProvider,
+): Promise<void> {
   const plan = getChangeOpenPlan(file);
   const title = `${getRepositoryDisplayName(repository.rootUri.fsPath, repository.name)}: ${file.label}`;
 
@@ -143,7 +167,7 @@ async function openChange(repository: GitRepositoryLike, file: RepositoryChangeF
   }
 
   if (plan.type === 'diff' && plan.original && plan.modified) {
-    await openCliDiff(repository, plan.original, plan.modified, title);
+    await openCliDiff(repository, plan.original, plan.modified, title, gitBlobDocumentProvider);
     return;
   }
 
@@ -160,10 +184,11 @@ async function openCliDiff(
   original: { uri: { fsPath: string }; ref?: string },
   modified: { uri: { fsPath: string }; ref?: string },
   title: string,
+  gitBlobDocumentProvider: GitBlobDocumentProvider,
 ): Promise<void> {
   const [originalUri, modifiedUri] = await Promise.all([
-    getCliDiffSideUri(repository, original),
-    getCliDiffSideUri(repository, modified),
+    getCliDiffSideUri(repository, original, gitBlobDocumentProvider),
+    getCliDiffSideUri(repository, modified, gitBlobDocumentProvider),
   ]);
   await vscode.commands.executeCommand('vscode.diff', originalUri, modifiedUri, title);
 }
@@ -171,6 +196,7 @@ async function openCliDiff(
 async function getCliDiffSideUri(
   repository: GitRepositoryLike,
   side: { uri: { fsPath: string }; ref?: string },
+  gitBlobDocumentProvider: GitBlobDocumentProvider,
 ): Promise<vscode.Uri> {
   if (side.ref === undefined) {
     return side.uri as vscode.Uri;
@@ -182,10 +208,9 @@ async function getCliDiffSideUri(
     return side.uri as vscode.Uri;
   }
 
-  // 历史版本和 index 内容通过临时文档打开，避免依赖 Git 扩展提供的 git: URI 文档提供器。
+  // 历史版本和 index 内容通过虚拟文档提供，避免依赖 Git 扩展或创建可见的 untitled Tab。
   const content = await repository.readBlob(ref, relativePath);
-  const document = await vscode.workspace.openTextDocument({ content });
-  return document.uri;
+  return gitBlobDocumentProvider.createDocument(content);
 }
 
 async function commitStaged(

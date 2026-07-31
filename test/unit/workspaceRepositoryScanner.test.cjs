@@ -71,3 +71,17 @@ test('scanner continues through a parent repository to find nested repositories'
     path.join(root, 'tools'),
   ]);
 });
+
+test('scanner checks workspace root repositories without walking nested folders', async (t) => {
+  const root = createWorkspace();
+  fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const scanner = new WorkspaceRepositoryScanner();
+  const repositories = await scanner.scanWorkspaceRoots([root, path.join(root, 'app')]);
+
+  assert.deepEqual(repositories, [
+    root,
+    path.join(root, 'app'),
+  ]);
+});

@@ -49,11 +49,14 @@ test('uses a refresh fallback only when Git status events are unavailable', () =
 test('refreshes every repository status before rebuilding the repository view', async () => {
   const calls = [];
   await refreshRepositoryStatuses([
-    { status: async () => calls.push('first') },
-    { status: async () => calls.push('second') },
+    { status: async (mode) => calls.push(['first', mode]) },
+    { status: async (mode) => calls.push(['second', mode]) },
     {},
+  ], 'normal');
+  assert.deepEqual(calls.sort((a, b) => a[0].localeCompare(b[0])), [
+    ['first', 'normal'],
+    ['second', 'normal'],
   ]);
-  assert.deepEqual(calls.sort(), ['first', 'second']);
 });
 
 test('limits concurrent repository status refreshes', async () => {

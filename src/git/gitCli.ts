@@ -12,6 +12,8 @@ export interface GitExecResult {
   stderr: string;
 }
 
+export type GitUntrackedFilesMode = 'all' | 'normal';
+
 export type GitExecutor = (
   file: string,
   args: readonly string[],
@@ -31,12 +33,12 @@ const EXEC_OPTIONS: GitExecOptions = {
 export class GitCli {
   constructor(private readonly execute: GitExecutor = nativeExecutor) {}
 
-  async readStatus(rootPath: string): Promise<ParsedGitStatus> {
+  async readStatus(rootPath: string, untrackedFiles: GitUntrackedFilesMode = 'all'): Promise<ParsedGitStatus> {
     const result = await this.run(rootPath, [
       'status',
       '--porcelain=v1',
       '-z',
-      '--untracked-files=all',
+      `--untracked-files=${untrackedFiles}`,
     ]);
     return parseGitStatus(result.stdout);
   }

@@ -1,4 +1,5 @@
 import type { GitRepositoryLike } from '../git/localGitRepository';
+import type { GitUntrackedFilesMode } from '../git/gitCli';
 import type { RepositoryChangeFile } from './repositoryChangeFiles';
 
 export type RepositoryAction = 'commit' | 'pull' | 'push';
@@ -35,6 +36,8 @@ export function needsFallbackRefresh(
  */
 export async function refreshRepositoryStatuses(
   repositories: readonly Pick<GitRepositoryLike, 'status'>[],
+  untrackedFiles: GitUntrackedFilesMode = 'all',
+  onRepositoryStatus?: () => void,
 ): Promise<void> {
   let nextRepositoryIndex = 0;
   const workerCount = Math.min(4, repositories.length);
@@ -44,7 +47,8 @@ export async function refreshRepositoryStatuses(
     while (nextRepositoryIndex < repositories.length) {
       const repository = repositories[nextRepositoryIndex];
       nextRepositoryIndex += 1;
-      await repository?.status?.();
+      await repository?.status?.(untrackedFiles);
+      onRepositoryStatus?.();
     }
   });
   await Promise.all(workers);

@@ -14,11 +14,13 @@ test('extension manifest', () => {
   assert.ok(refreshViewMenu);
   assert.match(refreshViewMenu.when, /view == scmRepositoryFilter\.changedRepositories/);
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.openChange'));
+  assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.openGitGraph'));
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.commitStaged'));
   for (const commandId of [
     'scmRepositoryFilter.commitStaged',
     'scmRepositoryFilter.pull',
     'scmRepositoryFilter.push',
+    'scmRepositoryFilter.openGitGraph',
   ]) {
     assert.ok(manifest.contributes.commands.some((command) => command.command === commandId));
     const menu = manifest.contributes.menus['view/item/context'].find((item) => item.command === commandId);

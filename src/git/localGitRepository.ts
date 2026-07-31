@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { GitCli } from './gitCli';
+import { GitCli, type GitUntrackedFilesMode } from './gitCli';
 import type { ParsedGitChange } from './gitStatusParser';
 import { toRepositoryRelativePath } from './localGitRepositoryPaths';
 
@@ -28,7 +28,7 @@ export interface GitRepositoryLike {
   name?: string;
   rootUri: vscode.Uri;
   state: LocalGitState;
-  status(): Promise<void>;
+  status(untrackedFiles?: GitUntrackedFilesMode): Promise<void>;
   commit(message: string, options?: { all?: boolean }): Promise<void>;
   pull(): Promise<void>;
   push(): Promise<void>;
@@ -52,8 +52,8 @@ export class LocalGitRepository implements GitRepositoryLike {
     this.name = path.basename(normalizedRoot) || normalizedRoot;
   }
 
-  async status(): Promise<void> {
-    const parsed = await this.gitCli.readStatus(this.rootUri.fsPath);
+  async status(untrackedFiles: GitUntrackedFilesMode = 'all'): Promise<void> {
+    const parsed = await this.gitCli.readStatus(this.rootUri.fsPath, untrackedFiles);
     this.state = {
       indexChanges: parsed.indexChanges.map((change) => toLocalChange(this.rootUri, change)),
       workingTreeChanges: parsed.workingTreeChanges.map((change) => toLocalChange(this.rootUri, change)),

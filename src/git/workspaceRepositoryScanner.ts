@@ -70,6 +70,21 @@ export class WorkspaceRepositoryScanner {
     return [...repositories].sort();
   }
 
+  /**
+   * 大型多仓库工作区先只检查工作区根目录，避免完整递归扫描阻塞 Changed Repositories 首次渲染。
+   */
+  async scanWorkspaceRoots(workspaceRoots: readonly string[]): Promise<string[]> {
+    const repositories = new Set<string>();
+    for (const workspaceRoot of workspaceRoots) {
+      const root = path.resolve(workspaceRoot);
+      const gitMarker = await this.fileSystem.getPathType(path.join(root, '.git'));
+      if (gitMarker === 'directory' || gitMarker === 'file') {
+        repositories.add(path.normalize(root));
+      }
+    }
+    return [...repositories].sort();
+  }
+
   private async visit(
     directory: string,
     depth: number,

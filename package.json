@@ -3,15 +3,16 @@
   "displayName": "SCM Repository Filter",
   "publisher": "local",
   "version": "0.2.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cizhaYang/git-filter-repository.git"
+  },
   "engines": {
     "vscode": "^1.95.0"
   },
   "categories": [
-    "Source Control"
-  ],
-  "activationEvents": [
-    "onView:scmRepositoryFilter.changedRepositories",
-    "onView:scmRepositoryFilter.changedFiles"
+    "SCM Providers"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -19,11 +20,13 @@
       "scm": [
         {
           "id": "scmRepositoryFilter.changedRepositories",
-          "name": "Changed Repositories"
+          "name": "Changed Repositories",
+          "icon": "$(repo)"
         },
         {
           "id": "scmRepositoryFilter.changedFiles",
-          "name": "Changed Files"
+          "name": "Changed Files",
+          "icon": "$(files)"
         }
       ]
     },

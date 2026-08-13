@@ -1,0 +1,16 @@
+{
+  "$schema": "https://example.com/mcp-servers.schema.json",
+  "_comment": "参考索引。本扩展的 Git 能力已由 src/git/ 层在 Extension Host 内实现，如需接入外部 MCP（如让 Agent 直接查仓库状态），在接入前补全对应配置。",
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/a1/vscode插件/git-filter-repository"],
+      "purpose": "受限文件读写沙箱（可选）"
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "purpose": "Agent 自主拉取 PRD / 文档"
+    }
+  }
+}

@@ -165,7 +165,11 @@
     "build": "node esbuild.mjs",
     "package": "npm run build && vsce package",
     "check": "node ./node_modules/typescript/bin/tsc --noEmit",
-    "test": "node --test"
+    "test": "node --test",
+    "test:unit": "node --test test/unit",
+    "test:unit": "node --test test/unit",
+    "harness:doctor": "node scripts/harness-doctor.mjs",
+    "harness:new-change": "node scripts/new-change.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

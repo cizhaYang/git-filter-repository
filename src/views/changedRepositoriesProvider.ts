@@ -139,7 +139,11 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     return [...this.repositories.values()];
   }
 
-  private scheduleRepositoryScan(): void {
+  /**
+   * 合并连续的工作区结构变化（新建、删除、重命名）到一次后台全量扫描，
+   * 避免每个文件事件都触发递归扫盘和全仓库 status 造成主线程抖动。
+   */
+  scheduleRepositoryScan(): void {
     if (this.repositoryScanTimer !== undefined) {
       return;
     }

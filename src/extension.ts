@@ -122,24 +122,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.commands.executeCommand('revealInExplorer', repository.rootUri);
     }),
     repositoriesProvider.onDidChangeTreeData(() => {
-      // Git status 事件首先刷新仓库列表；文件视图必须跟随刷新，即使选中仓库引用没有变化。
-      filesProvider.refresh();
+      // Git status 事件首先刷新仓库列表；文件视图只在选中仓库的变更集真正变化时才跟随重建，
+      // 避免编辑其它仓库时反复重刷已渲染的文件列表拖慢切换。
+      filesProvider.refreshForRepositoryData();
       syncMessage();
     }),
     filesProvider.onDidChangeTreeData(() => syncMessage()),
     selectionState.onDidChange(() => syncMessage()),
     // Git 扩展事件之外，工作区文件事件覆盖保存、创建、删除和重命名等本地变化。
+    // 结构变化统一走防抖的后台扫描，避免每个文件事件都触发递归扫盘和全仓库 status。
     vscode.workspace.onDidSaveTextDocument((document) => repositoriesProvider.scheduleStatusRefreshForUri(document.uri)),
     vscode.workspace.onDidCreateFiles((event) => {
-      void repositoriesProvider.refreshRepositories();
+      repositoriesProvider.scheduleRepositoryScan();
       event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri));
     }),
     vscode.workspace.onDidDeleteFiles((event) => {
-      void repositoriesProvider.refreshRepositories();
+      repositoriesProvider.scheduleRepositoryScan();
       event.files.forEach((uri) => repositoriesProvider.scheduleStatusRefreshForUri(uri));
     }),
     vscode.workspace.onDidRenameFiles((event) => {
-      void repositoriesProvider.refreshRepositories();
+      repositoriesProvider.scheduleRepositoryScan();
       for (const file of event.files) {
         repositoriesProvider.scheduleStatusRefreshForUri(file.oldUri);
         repositoriesProvider.scheduleStatusRefreshForUri(file.newUri);

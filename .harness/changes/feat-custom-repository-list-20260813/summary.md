@@ -4,9 +4,9 @@
 |---|---|
 | Change ID | feat-custom-repository-list-20260813 |
 | 类型 | feat |
-| 状态 | DRAFT |
+| 状态 | DELIVERED |
 | 负责人 | Extension Owner Agent |
-| 起止时间 | 2026-08-13 ~ — |
+| 起止时间 | 2026-08-13 ~ 2026-08-13 |
 | Spec | [request_analysis/spec.md](request_analysis/spec.md) |
 | Tasks | [request_analysis/tasks.md](request_analysis/tasks.md) |
 
@@ -18,7 +18,7 @@
 | 2 | 编码实现 | DONE | — | coding/coding_report_v1.md | 2026-08-13 |
 | 3 | 代码评审 | DONE | 3/2 | coding/review/code_review_v1.md, code_review_v2.md | 2026-08-13 |
 | 4 | 测试与 CI | DONE | 1/2 | unit_test/test_plan.md, ci_result/ci_summary.md | 2026-08-13 |
-| 5 | 提交与交付 | IN_PROGRESS | — | commit, DELIVERED | — |
+| 5 | 提交与交付 | DONE | — | commit feb70cc | 2026-08-13 |
 
 ## HITL 确认点 ①
 

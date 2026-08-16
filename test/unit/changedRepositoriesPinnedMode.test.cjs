@@ -267,3 +267,25 @@ test('discoverRepositoryRoots in pinned mode uses the shallow scan, not the full
   assert.equal(fullScanCalls, 0);
   assert.equal(shallowScanCalls, 1);
 });
+
+test('discoverAllRepositoryRoots in pinned mode performs the full recursive scan as a fallback', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scan: async () => ['/workspace/originSource/acme/address', '/workspace/originSource/acme/ordering'],
+      scanWorkspaceRoots: async () => [],
+    },
+    repositoryFactory: (root) => createRepository(root, false),
+    scanMode: 'pinned',
+    getPinnedRelativePaths: () => [],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  const roots = await provider.discoverAllRepositoryRoots();
+  assert.ok(roots.includes('/workspace/originSource/acme/address'));
+  assert.ok(roots.includes('/workspace/originSource/acme/ordering'));
+  // 全量扫描即使发现嵌套仓库，也只补充进兜底方法，不改变浅层 discoverRepositoryRoots 的结果集。
+  const shallow = await provider.discoverRepositoryRoots();
+  assert.equal(shallow.length, 0);
+});

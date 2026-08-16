@@ -465,7 +465,15 @@ async function pinRepository(
   }
 
   const current = currentPinnedRelativePaths();
-  const resolution = resolvePinnedRepositories(repositoryRoots, [pattern]);
+  let resolution = resolvePinnedRepositories(repositoryRoots, [pattern]);
+
+  // 浅层候选未命中时（不是歧义、确实没匹配到），做一次全量递归扫描兜底，
+  // 避免漏掉 native Source Control 之外、未被 shallow 扫描发现的嵌套仓库。
+  if (resolution.matched.length === 0 && resolution.notFound.includes(pattern)) {
+    const allRoots = await provider.discoverAllRepositoryRoots();
+    const merged = [...new Set([...repositoryRoots, ...allRoots])].sort();
+    resolution = resolvePinnedRepositories(merged, [pattern]);
+  }
 
   const targetRoot = resolution.matched[0]
     ?? await chooseAmbiguousRoot(resolution.ambiguous, pattern);

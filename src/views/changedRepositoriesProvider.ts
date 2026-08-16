@@ -187,6 +187,27 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     return [...roots].sort();
   }
 
+  /**
+   * 供「添加固定仓库」在浅层候选未命中时兜底：对全部工作区做一次完整递归扫描，
+   * 找到 native Source Control 之外的嵌套仓库（如 monorepo 里 originSource/acme/address）。
+   * 只在添加命令需要时触发，常态刷新不调用，避免给 pinned 模式引入全量遍历开销。
+   */
+  async discoverAllRepositoryRoots(): Promise<readonly string[]> {
+    const roots = new Set<string>();
+    try {
+      const scanned = await this.scanner.scan(this.workspaceRoots);
+      for (const root of scanned) {
+        roots.add(path.normalize(path.resolve(root)));
+      }
+    } catch (error) {
+      this.logger?.appendLine(`[scan] Unable to run full recursive scan for pinning: ${String(error)}`);
+    }
+    for (const root of this.repositories.keys()) {
+      roots.add(path.normalize(path.resolve(root)));
+    }
+    return [...roots].sort();
+  }
+
   /** 相对工作区根的路径（供添加命令把消歧后的选择持久化，随项目提交可移植）。 */
   toWorkspaceRelative(rootPath: string): string {
     const root = path.resolve(rootPath);

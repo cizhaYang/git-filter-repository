@@ -15,7 +15,33 @@
     "SCM Providers"
   ],
   "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:scmRepositoryFilter.changedRepositories",
+    "onView:scmRepositoryFilter.changedFiles"
+  ],
   "contributes": {
+    "configuration": {
+      "title": "SCM Repository Filter",
+      "properties": {
+        "scmRepositoryFilter.scanMode": {
+          "type": "string",
+          "enum": [
+            "pinned",
+            "all"
+          ],
+          "default": "pinned",
+          "markdownDescription": "扫描模式。默认 `pinned`：只扫描/刷新固定的仓库，适合嵌套仓库很多、只关注少数仓库的工作区；`all`：递归扫描工作区下所有仓库（兼容旧行为）。"
+        },
+        "scmRepositoryFilter.pinnedRepositories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "固定仓库列表（相对路径后缀，如 `acme/address`）。固定仓库无论在 `pinned` 还是 `all` 模式下都常驻显示。"
+        }
+      }
+    },
     "views": {
       "scm": [
         {
@@ -92,12 +118,27 @@
         "command": "scmRepositoryFilter.unstageAllChanges",
         "title": "Unstage All Changes",
         "icon": "$(remove)"
+      },
+      {
+        "command": "scmRepositoryFilter.pinRepository",
+        "title": "Pin Repository",
+        "icon": "$(add)"
+      },
+      {
+        "command": "scmRepositoryFilter.unpinRepository",
+        "title": "Unpin Repository",
+        "icon": "$(close)"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "scmRepositoryFilter.refresh",
+          "when": "view == scmRepositoryFilter.changedRepositories",
+          "group": "navigation"
+        },
+        {
+          "command": "scmRepositoryFilter.pinRepository",
           "when": "view == scmRepositoryFilter.changedRepositories",
           "group": "navigation"
         }
@@ -122,6 +163,11 @@
           "command": "scmRepositoryFilter.openGitGraph",
           "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
           "group": "navigation"
+        },
+        {
+          "command": "scmRepositoryFilter.unpinRepository",
+          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == pinnedRepository",
+          "group": "inline"
         },
         {
           "command": "scmRepositoryFilter.stageChange",

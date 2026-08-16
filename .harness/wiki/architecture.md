@@ -64,8 +64,14 @@
 | `scmRepositoryFilter.discardChange` | Discard | changedFiles item |
 | `scmRepositoryFilter.stageAllChanges` | Stage All | changedFiles group |
 | `scmRepositoryFilter.unstageAllChanges` | Unstage All | changedFiles group |
+| `scmRepositoryFilter.pinRepository` | 添加固定仓库 | changedRepositories title |
+| `scmRepositoryFilter.unpinRepository` | 移除固定仓库 | changedRepositories item |
 
 **视图（viewsWelcome）**：`scmRepositoryFilter.changedRepositories` / `scmRepositoryFilter.changedFiles`
+
+**配置项**：
+- `scmRepositoryFilter.scanMode`（`'pinned'` | `'all'`，默认 `'pinned'`）— `pinned` 只扫描/刷新固定仓库（嵌套仓库多、只关注少数仓库时的性能模式）；`all` 递归扫描工作区全部仓库（兼容旧行为）。
+- `scmRepositoryFilter.pinnedRepositories`（`string[]`）— 固定仓库列表，存**相对工作区根的路径**（如 `originSource/acme/address`）。添加命令接受后缀（`acme/address`）做唯一匹配后转存相对路径；固定仓库在两种模式下都常驻显示（pin 图标），撤销后随配置即时重建。
 
 ## 改动边界
 

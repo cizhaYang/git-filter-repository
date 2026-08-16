@@ -7,6 +7,7 @@ export class RepositoryTreeItem extends vscode.TreeItem {
   constructor(
     public readonly repository: GitRepositoryLike,
     private readonly workspaceFolder?: vscode.WorkspaceFolder,
+    private readonly isPinned = false,
   ) {
     super(path.basename(repository.rootUri.fsPath), vscode.TreeItemCollapsibleState.None);
 
@@ -15,8 +16,10 @@ export class RepositoryTreeItem extends vscode.TreeItem {
       ? vscode.workspace.asRelativePath(repository.rootUri, false)
       : repository.rootUri.fsPath;
     this.tooltip = `${repository.rootUri.fsPath}\n${changeCount} changes`;
-    this.contextValue = 'changedRepository';
-    this.iconPath = new vscode.ThemeIcon('repo');
+    // 固定仓库用 pinned 图标区分「手动固定的常驻仓库」与「因有改动出现的仓库」；
+    // contextValue 决定右键菜单（Unpin 只出现在固定条目上）。
+    this.contextValue = isPinned ? 'pinnedRepository' : 'changedRepository';
+    this.iconPath = new vscode.ThemeIcon(isPinned ? 'pinned' : 'repo');
     this.command = {
       command: 'scmRepositoryFilter.selectRepository',
       title: 'Select Repository',

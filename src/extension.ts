@@ -13,6 +13,7 @@ import {
   type RepositoryFileAction,
 } from './domain/repositoryActions';
 import { getRepositoryDisplayName } from './domain/repositoryQueries';
+import { nextPinnedRelativePaths, removePinnedRelativePath, resolvePinnedRepositories } from './domain/pinnedRepositories';
 import { getRepositoryChangeFiles, type RepositoryChangeFile } from './domain/repositoryChangeFiles';
 import { openRepositoryGitGraph } from './domain/gitGraph';
 import { GIT_BLOB_DOCUMENT_SCHEME, GitBlobDocumentProvider } from './git/gitBlobDocumentProvider';
@@ -68,6 +69,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     gitBlobDocumentProvider,
     gitBlobDocumentRegistration,
     vscode.commands.registerCommand('scmRepositoryFilter.refresh', () => repositoriesProvider.refreshFromGitStatus()),
+    vscode.commands.registerCommand('scmRepositoryFilter.pinRepository', async () => {
+      await pinRepository(repositoriesProvider, outputChannel);
+    }),
+    vscode.commands.registerCommand('scmRepositoryFilter.unpinRepository', async (target: unknown) => {
+      await unpinRepository(target, repositoriesProvider);
+    }),
     vscode.commands.registerCommand('scmRepositoryFilter.openChange', async (repository: GitRepositoryLike, file: RepositoryChangeFile) => {
       await openChange(repository, file, gitBlobDocumentProvider);
     }),
@@ -432,4 +439,100 @@ function getFileActionLabel(action: RepositoryFileAction): string {
 
 function getFilesActionLabel(action: RepositoryFilesAction): string {
   return action === 'stageAll' ? 'Stage all changes' : 'Unstage all changes';
+}
+
+async function pinRepository(
+  provider: ChangedRepositoriesProvider,
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const repositoryRoots = await provider.discoverRepositoryRoots();
+  if (repositoryRoots.length === 0) {
+    vscode.window.showErrorMessage('No Git repositories found in the workspace to pin.');
+    return;
+  }
+
+  const input = await vscode.window.showInputBox({
+    prompt: 'Enter a repository path suffix to pin',
+    placeHolder: 'e.g. acme/address',
+    ignoreFocusOut: true,
+  });
+  if (input === undefined) {
+    return;
+  }
+  const pattern = input.trim();
+  if (!pattern) {
+    return;
+  }
+
+  const current = currentPinnedRelativePaths();
+  const resolution = resolvePinnedRepositories(repositoryRoots, [pattern]);
+
+  const targetRoot = resolution.matched[0]
+    ?? await chooseAmbiguousRoot(resolution.ambiguous, pattern);
+  if (!targetRoot) {
+    vscode.window.showErrorMessage(
+      resolution.notFound.includes(pattern)
+        ? `No repository matches "${pattern}". Check that the path is valid for this workspace.`
+        : `Repository "${pattern}" is ambiguous. Refine the path to a single repository.`,
+    );
+    return;
+  }
+
+  const relativePath = provider.toWorkspaceRelative(targetRoot);
+  const next = nextPinnedRelativePaths(current, relativePath);
+  if (next.length === current.length) {
+    outputChannel.appendLine(`[pin] "${relativePath}" is already pinned.`);
+    return;
+  }
+  await updatePinnedRelativePaths(next);
+  outputChannel.appendLine(`[pin] Pinned "${relativePath}".`);
+}
+
+async function unpinRepository(
+  target: unknown,
+  provider: ChangedRepositoriesProvider,
+): Promise<void> {
+  const repository = resolveRepositoryTarget(target);
+  if (!repository) {
+    vscode.window.showErrorMessage('No pinned repository was selected.');
+    return;
+  }
+  if (!provider.isPinnedRoot(repository.rootUri.fsPath)) {
+    vscode.window.showWarningMessage('This repository is not pinned; nothing was removed.');
+    return;
+  }
+  const relativePath = provider.toWorkspaceRelative(repository.rootUri.fsPath);
+  const current = currentPinnedRelativePaths();
+  const next = removePinnedRelativePath(current, relativePath);
+  if (next.length === current.length) {
+    return;
+  }
+  await updatePinnedRelativePaths(next);
+}
+
+async function chooseAmbiguousRoot(
+  ambiguous: readonly { candidateRoots: readonly string[] }[],
+  pattern: string,
+): Promise<string | undefined> {
+  for (const entry of ambiguous) {
+    const candidates = entry.candidateRoots
+      .map((root) => ({ root, label: root }))
+      .map((option) => ({
+        label: option.root,
+        root: option.root,
+      }));
+    const picked = await vscode.window.showQuickPick(candidates, {
+      placeHolder: `Multiple repositories match "${pattern}". Pick one to pin.`,
+    });
+    return picked?.root;
+  }
+  return undefined;
+}
+
+function currentPinnedRelativePaths(): string[] {
+  return vscode.workspace.getConfiguration('scmRepositoryFilter').get<string[]>('pinnedRepositories') ?? [];
+}
+
+async function updatePinnedRelativePaths(next: readonly string[]): Promise<void> {
+  await vscode.workspace.getConfiguration('scmRepositoryFilter').update('pinnedRepositories', [...next], vscode.ConfigurationTarget.Workspace);
 }

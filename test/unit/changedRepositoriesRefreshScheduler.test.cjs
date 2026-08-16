@@ -49,6 +49,8 @@ function createVscodeStub() {
         onDidDelete: () => ({ dispose() {} }),
       }),
       getWorkspaceFolder: () => undefined,
+      getConfiguration: () => ({ get: () => undefined, update: async () => {} }),
+      onDidChangeConfiguration: () => ({ dispose() {} }),
     },
   };
 }
@@ -93,6 +95,7 @@ async function createProvider(ChangedRepositoriesProvider, repositories, interva
     workspaceRoots: ['/workspace'],
     scanner: { scan: async () => [...repositoryByPath.keys()] },
     repositoryFactory: (root) => repositoryByPath.get(root),
+    scanMode: 'all',
   }, { reconcile() {} }, undefined, interval);
   await provider.initialize();
   return provider;

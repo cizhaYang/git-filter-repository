@@ -36,6 +36,8 @@ function createVscodeStub() {
         onDidDelete: () => ({ dispose() {} }),
       }),
       getWorkspaceFolder: () => undefined,
+      getConfiguration: () => ({ get: () => undefined, update: async () => {} }),
+      onDidChangeConfiguration: () => ({ dispose() {} }),
     },
   };
 }
@@ -85,6 +87,7 @@ test('provider displays dirty repositories discovered outside native Source Cont
     workspaceRoots: ['/workspace'],
     scanner: { scan: async () => Object.keys(repositories) },
     repositoryFactory: (root) => repositories[root],
+    scanMode: 'all',
   }, { reconcile() {} }, undefined, 0);
   context.after(() => provider.dispose());
 
@@ -104,6 +107,7 @@ test('provider refreshes its repository set when a later scan finds a new reposi
     workspaceRoots: ['/workspace'],
     scanner: { scan: async () => roots },
     repositoryFactory: (root) => repositories[root],
+    scanMode: 'all',
   }, { reconcile() {} }, undefined, 0);
   context.after(() => provider.dispose());
 

@@ -290,7 +290,7 @@ async function runRepositoryOperation(
       () => runRepositoryAction(repository, action, commitMessage),
     );
     if (needsFallbackRefresh(repository)) {
-      provider.refresh();
+      provider.scheduleStatusRefresh([repository]);
     }
     vscode.window.showInformationMessage(`${actionLabel} completed for ${displayName}.`);
   } catch (error) {
@@ -340,7 +340,9 @@ async function runFileAction(
       await run();
     }
     if (needsFallbackRefresh(repository)) {
-      repositoriesProvider.refresh();
+      // 单纯重发 onDidChangeTreeData 读的是缓存 state，git add 后才重跑的 status 才更新 state；
+      // 走防抖 status 刷新，让暂存/撤销/丢弃真正反映到两个 Tree View。
+      repositoriesProvider.scheduleStatusRefresh([repository]);
     }
     if (shouldShowFileActionSuccess(action)) {
       vscode.window.showInformationMessage(`${getFileActionLabel(action)} completed for ${displayName}.`);
@@ -375,7 +377,7 @@ async function runGroupAction(
   try {
     await runRepositoryFilesAction(repository, files, action);
     if (needsFallbackRefresh(repository)) {
-      repositoriesProvider.refresh();
+      repositoriesProvider.scheduleStatusRefresh([repository]);
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

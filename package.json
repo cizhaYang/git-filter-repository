@@ -146,17 +146,17 @@
       "view/item/context": [
         {
           "command": "scmRepositoryFilter.commitStaged",
-          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "when": "view == scmRepositoryFilter.changedRepositories && (viewItem == changedRepository || viewItem == pinnedRepository)",
           "group": "inline"
         },
         {
           "command": "scmRepositoryFilter.pull",
-          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "when": "view == scmRepositoryFilter.changedRepositories && (viewItem == changedRepository || viewItem == pinnedRepository)",
           "group": "inline"
         },
         {
           "command": "scmRepositoryFilter.push",
-          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "when": "view == scmRepositoryFilter.changedRepositories && (viewItem == changedRepository || viewItem == pinnedRepository)",
           "group": "inline"
         },
         {

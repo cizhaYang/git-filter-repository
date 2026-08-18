@@ -172,6 +172,34 @@ test('polling detects a changed file replacement when the change count stays equ
   subscription.dispose();
 });
 
+// 回归：暂存/撤销等变更命令完成后必须走 scheduleStatusRefresh（重跑 status 更新缓存 state），
+// 而不是裸 refresh()（仅重发 onDidChangeTreeData，读到的仍是旧 state，视图无变化）。
+test('scheduleStatusRefresh re-runs status and emits tree data; bare refresh only emits', async () => {
+  const ChangedRepositoriesProvider = loadProviderWithVscodeStub();
+  let statusCalls = 0;
+  const repository = createRepository('ordering', async () => {
+    statusCalls += 1;
+  });
+  const provider = await createProvider(ChangedRepositoriesProvider, [repository]);
+  statusCalls = 0;
+  let treeRefreshes = 0;
+  const subscription = provider.onDidChangeTreeData(() => {
+    treeRefreshes += 1;
+  });
+
+  provider.refresh();
+  assert.equal(statusCalls, 0);
+  assert.equal(treeRefreshes, 1);
+
+  provider.scheduleStatusRefresh([repository]);
+  await delay(220);
+  assert.equal(statusCalls, 1);
+  assert.ok(treeRefreshes >= 2);
+
+  subscription.dispose();
+  provider.dispose();
+});
+
 test('a nested file refreshes only its deepest owning repository', async () => {
   const ChangedRepositoriesProvider = loadProviderWithVscodeStub();
   let parentStatusCalls = 0;

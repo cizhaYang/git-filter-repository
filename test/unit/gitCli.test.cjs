@@ -225,3 +225,102 @@ test('git cli preserves command errors and stderr', async () => {
     (error) => error === failure && error.stderr === 'not a git repository',
   );
 });
+
+test('git cli getCurrentBranch returns the branch name and undefined for detached HEAD', async () => {
+  let step = 0;
+  const cli = new GitCli(async (file, args) => {
+    step += 1;
+    if (step === 1) {
+      return { stdout: 'feature/x\n', stderr: '' };
+    }
+    return { stdout: '', stderr: '' };
+  });
+
+  await cli.getCurrentBranch('/workspace/repo');
+  const detached = await cli.getCurrentBranch('/workspace/repo');
+
+  // 第一次调用使用 branch --show-current
+  assert.equal(step, 2);
+  assert.equal(detached, undefined);
+});
+
+test('git cli getCurrentBranch is public and reusable by status refresh', async () => {
+  const calls = [];
+  const cli = new GitCli(async (file, args) => {
+    calls.push({ file, args });
+    return { stdout: 'main\n', stderr: '' };
+  });
+
+  const branch = await cli.getCurrentBranch('/workspace/repo');
+
+  assert.equal(branch, 'main');
+  assert.deepEqual(calls[0].args, ['-C', '/workspace/repo', 'branch', '--show-current']);
+});
+
+test('git cli listBranches returns deduplicated local and remote branches', async () => {
+  const output = [
+    'main',
+    'feature/x',
+    'feature/修复$ bug',
+    'origin/HEAD',
+    'origin/develop',
+    'origin/main',
+    'origin/main',
+    '',
+  ].join('\n');
+  const cli = new GitCli(async (file, args) => ({ stdout: output, stderr: '' }));
+
+  const branches = await cli.listBranches('/workspace/repo');
+
+  assert.deepEqual(branches, [
+    'main',
+    'feature/x',
+    'feature/修复$ bug',
+    'origin/develop',
+    'origin/main',
+  ]);
+});
+
+test('git cli listBranches excludes the symbolic HEAD reference', async () => {
+  const cli = new GitCli(async () => ({ stdout: 'main\norigin/HEAD -> origin/main\norigin/main\n', stderr: '' }));
+
+  const branches = await cli.listBranches('/workspace/repo');
+
+  assert.deepEqual(branches, ['main', 'origin/main']);
+});
+
+test('git cli checkoutBranch passes local branch as single argv token', async () => {
+  const calls = [];
+  const cli = new GitCli(async (file, args) => {
+    calls.push({ file, args });
+    return { stdout: '', stderr: '' };
+  });
+
+  await cli.checkoutBranch('/workspace/repo', 'feature/x');
+
+  assert.deepEqual(calls[0].args, ['-C', '/workspace/repo', 'checkout', 'feature/x']);
+});
+
+test('git cli checkoutBranch creates a local tracking branch for a remote ref', async () => {
+  const calls = [];
+  const cli = new GitCli(async (file, args) => {
+    calls.push({ file, args });
+    return { stdout: '', stderr: '' };
+  });
+
+  await cli.checkoutBranch('/workspace/repo', 'origin/develop');
+
+  assert.deepEqual(calls[0].args, ['-C', '/workspace/repo', 'checkout', '-b', 'develop', 'origin/develop']);
+});
+
+test('git cli checkoutBranch keeps special characters as single argv token without shell injection', async () => {
+  const calls = [];
+  const cli = new GitCli(async (file, args) => {
+    calls.push({ file, args });
+    return { stdout: '', stderr: '' };
+  });
+
+  await cli.checkoutBranch('/workspace/repo', 'feature/修复$ bug');
+
+  assert.deepEqual(calls[0].args, ['-C', '/workspace/repo', 'checkout', 'feature/修复$ bug']);
+});

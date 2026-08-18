@@ -79,7 +79,11 @@ export class GitCli {
     await this.run(rootPath, ['push']);
   }
 
-  private async getCurrentBranch(rootPath: string): Promise<string | undefined> {
+  /**
+   * 返回当前 HEAD 所在分支名；detached HEAD 或命令失败时返回 undefined（不抛错）。
+   * 供 status 刷新与 push 上游探测复用；上层（LocalGitRepository.status）用它缓存当前分支。
+   */
+  async getCurrentBranch(rootPath: string): Promise<string | undefined> {
     try {
       const result = await this.run(rootPath, ['branch', '--show-current']);
       const branch = result.stdout.trim();
@@ -89,6 +93,41 @@ export class GitCli {
       this.warn(`[git] Unable to read current branch: ${String(error)}`);
       return undefined;
     }
+  }
+
+  /**
+   * 列出仓库所有可用分支（本地 + 远端去重），供切换分支的 QuickPick 展示。
+   * `--format=%(refname:short)` 输出每行一个分支简名；剔除 `origin/HEAD` 这类符号引用；
+   * 以换行分隔后去重。返回值为分支名数组，不拼进任何后续 git 命令行（仅作 UI 数据）。
+   */
+  async listBranches(rootPath: string): Promise<string[]> {
+    const result = await this.run(rootPath, ['branch', '--all', '--format=%(refname:short)']);
+    const seen = new Set<string>();
+    const branches: string[] = [];
+    for (const rawLine of result.stdout.split('\n')) {
+      const branch = rawLine.trim();
+      // origin/HEAD 是指向默认分支的符号引用，不是真实分支，应剔除。
+      if (!branch || branch.includes('HEAD') || seen.has(branch)) {
+        continue;
+      }
+      seen.add(branch);
+      branches.push(branch);
+    }
+    return branches;
+  }
+
+  /**
+   * 切换分支。远端 ref（`origin/<name>`）直接用会进入 detached HEAD，因此自动创建同名本地追踪分支
+   * （`checkout -b <name> <origin/<name>>`）；本地分支则普通 `checkout <branch>`。
+   * 分支名作为 argv 数组元素传给 subprocess，避免 shell 重新解释。
+   */
+  async checkoutBranch(rootPath: string, ref: string): Promise<void> {
+    if (ref.startsWith('origin/')) {
+      const localName = ref.slice('origin/'.length);
+      await this.run(rootPath, ['checkout', '-b', localName, ref]);
+      return;
+    }
+    await this.run(rootPath, ['checkout', ref]);
   }
 
   private async hasUpstream(rootPath: string, branch: string): Promise<boolean> {

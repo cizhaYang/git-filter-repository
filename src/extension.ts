@@ -109,6 +109,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('scmRepositoryFilter.push', async (target: unknown) => {
       await runRemoteAction(target, 'push', repositoriesProvider, filesProvider, outputChannel);
     }),
+    vscode.commands.registerCommand('scmRepositoryFilter.switchBranch', async (target: unknown) => {
+      await switchBranch(target, repositoriesProvider, outputChannel);
+    }),
     vscode.commands.registerCommand('scmRepositoryFilter.stageChange', async (target: unknown) => {
       await runFileAction(target, 'stage', repositoriesProvider, filesProvider, outputChannel);
     }),
@@ -268,6 +271,63 @@ async function runRemoteAction(
   }
 
   await runRepositoryOperation(repository, action, provider, filesProvider, outputChannel);
+}
+
+async function switchBranch(
+  target: unknown,
+  provider: ChangedRepositoriesProvider,
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const repository = resolveRepositoryTarget(target);
+  if (!repository) {
+    vscode.window.showErrorMessage('No Git repository was selected.');
+    return;
+  }
+
+  let branches: string[];
+  try {
+    branches = await repository.listBranches();
+  } catch (error) {
+    vscode.window.showErrorMessage(`Unable to list branches: ${String(error)}`);
+    return;
+  }
+  if (branches.length === 0) {
+    vscode.window.showInformationMessage('No branches found in this repository.');
+    return;
+  }
+  // 高亮当前分支（不可选或仅标记当前），避免用户误以为要切到它。
+  const items = branches.map((branch) => ({
+    label: branch,
+    description: branch === repository.currentBranch ? 'current branch' : undefined,
+  }));
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select a branch to switch to',
+    matchOnDescription: true,
+  });
+  if (!picked) {
+    return;
+  }
+  const branchName = picked.label;
+  if (branchName === repository.currentBranch) {
+    vscode.window.showInformationMessage(`Already on branch ${branchName}.`);
+    return;
+  }
+
+  const displayName = getRepositoryDisplayName(repository.rootUri.fsPath, repository.name);
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Switching ${displayName} to ${branchName}` },
+      () => repository.switchBranch(branchName),
+    );
+    // 切换可能改变工作区文件集合，复用通用 status 刷新让两个 Tree View 同步。
+    provider.scheduleStatusRefresh([repository]);
+    vscode.window.showInformationMessage(`Switched ${displayName} to ${branchName}.`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`[switchBranch] ${repository.rootUri.fsPath}: ${detail}`);
+    // 有未提交改动等冲突时，直接透出 git 报错；不自动 stash。
+    vscode.window.showErrorMessage(`Failed to switch ${displayName} to ${branchName}: ${detail}`);
+  }
 }
 
 async function runRepositoryOperation(

@@ -28,6 +28,8 @@ export interface GitRepositoryLike {
   name?: string;
   rootUri: vscode.Uri;
   state: LocalGitState;
+  /** 当前 HEAD 所在分支名（detached HEAD 或非 git 仓库时为 undefined），由 status() 刷新时更新。 */
+  currentBranch?: string;
   status(untrackedFiles?: GitUntrackedFilesMode): Promise<void>;
   commit(message: string, options?: { all?: boolean }): Promise<void>;
   pull(): Promise<void>;
@@ -36,12 +38,17 @@ export interface GitRepositoryLike {
   revert(paths: string[]): Promise<void>;
   clean(paths: string[]): Promise<void>;
   readBlob(ref: string, relativePath: string): Promise<string>;
+  /** 列出仓库可用分支（本地 + 远端去重），供切换分支选择。 */
+  listBranches(): Promise<string[]>;
+  /** 切换到指定分支（远端 ref 自动创建本地追踪分支）。 */
+  switchBranch(branchName: string): Promise<void>;
 }
 
 export class LocalGitRepository implements GitRepositoryLike {
   readonly rootUri: vscode.Uri;
   readonly name: string;
   state: LocalGitState = createEmptyState();
+  currentBranch: string | undefined;
 
   constructor(
     rootPath: string,
@@ -53,7 +60,12 @@ export class LocalGitRepository implements GitRepositoryLike {
   }
 
   async status(untrackedFiles: GitUntrackedFilesMode = 'all'): Promise<void> {
-    const parsed = await this.gitCli.readStatus(this.rootUri.fsPath, untrackedFiles);
+    // 状态与当前分支并行读取，避免分支名成为单独一次串行往返。
+    const [parsed, currentBranch] = await Promise.all([
+      this.gitCli.readStatus(this.rootUri.fsPath, untrackedFiles),
+      this.gitCli.getCurrentBranch(this.rootUri.fsPath),
+    ]);
+    this.currentBranch = currentBranch;
     this.state = {
       indexChanges: parsed.indexChanges.map((change) => toLocalChange(this.rootUri, change)),
       workingTreeChanges: parsed.workingTreeChanges.map((change) => toLocalChange(this.rootUri, change)),
@@ -73,6 +85,16 @@ export class LocalGitRepository implements GitRepositoryLike {
 
   async push(): Promise<void> {
     await this.gitCli.push(this.rootUri.fsPath);
+  }
+
+  listBranches(): Promise<string[]> {
+    return this.gitCli.listBranches(this.rootUri.fsPath);
+  }
+
+  async switchBranch(branchName: string): Promise<void> {
+    await this.gitCli.checkoutBranch(this.rootUri.fsPath, branchName);
+    // 切换后当前分支名立即就地更新，UI 无需等待下一次 status 刷新即可反映。
+    this.currentBranch = branchName.startsWith('origin/') ? branchName.slice('origin/'.length) : branchName;
   }
 
   async add(paths: string[]): Promise<void> {

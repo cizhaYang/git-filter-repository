@@ -68,5 +68,22 @@ test('extension manifest', () => {
   assert.equal(manifest.contributes.menus['view/item/context']
     .some((item) => item.command === 'scmRepositoryFilter.push'
       && item.when.includes('view == scmRepositoryFilter.changedFiles')), false);
+  // 切换分支命令：命令已注册，且内联按钮同时出现在有改动与固定仓库上，排在 commit 之前。
+  assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.switchBranch'));
+  const switchMenu = manifest.contributes.menus['view/item/context']
+    .find((item) => item.command === 'scmRepositoryFilter.switchBranch');
+  assert.ok(switchMenu, 'switchBranch should be present in view/item/context');
+  assert.match(switchMenu.when, /view == scmRepositoryFilter\.changedRepositories/);
+  assert.match(switchMenu.when, /viewItem == changedRepository/);
+  assert.match(switchMenu.when, /viewItem == pinnedRepository/);
+  assert.equal(switchMenu.group, 'inline');
+  // switchBranch 的 inline 按钮排在 commit 之前（数组顺序决定按钮从左到右）。
+  const inlineItems = manifest.contributes.menus['view/item/context']
+    .filter((item) => item.when?.includes('scmRepositoryFilter.changedRepositories') && item.group === 'inline');
+  const switchIndex = inlineItems.findIndex((item) => item.command === 'scmRepositoryFilter.switchBranch');
+  const commitIndex = inlineItems.findIndex((item) => item.command === 'scmRepositoryFilter.commitStaged');
+  assert.ok(switchIndex >= 0 && commitIndex >= 0 && switchIndex < commitIndex,
+    'switchBranch inline button should precede commit');
+
   assert.ok(manifest.activationEvents.includes('onView:scmRepositoryFilter.changedRepositories'));
 });

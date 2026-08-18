@@ -585,6 +585,8 @@ function getRepositoryStateSignature(repositories: readonly GitRepositoryLike[])
   return repositories
     .map((repository) => [
       repository.rootUri.fsPath,
+      // 分支名纳入签名：外部命令行切换分支时，对账刷新能感知并更新视图。
+      repository.currentBranch ?? '',
       getChangesSignature(repository.state.indexChanges),
       getChangesSignature(repository.state.workingTreeChanges),
       getChangesSignature(repository.state.mergeChanges),

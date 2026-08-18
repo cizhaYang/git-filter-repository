@@ -128,6 +128,11 @@
         "command": "scmRepositoryFilter.unpinRepository",
         "title": "Unpin Repository",
         "icon": "$(close)"
+      },
+      {
+        "command": "scmRepositoryFilter.switchBranch",
+        "title": "Switch Branch",
+        "icon": "$(git-branch)"
       }
     ],
     "menus": {
@@ -144,6 +149,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "scmRepositoryFilter.switchBranch",
+          "when": "view == scmRepositoryFilter.changedRepositories && (viewItem == changedRepository || viewItem == pinnedRepository)",
+          "group": "inline"
+        },
         {
           "command": "scmRepositoryFilter.commitStaged",
           "when": "view == scmRepositoryFilter.changedRepositories && (viewItem == changedRepository || viewItem == pinnedRepository)",

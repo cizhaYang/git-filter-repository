@@ -47,11 +47,12 @@ function loadRepositoryTreeItemWithVscodeStub() {
   }
 }
 
-function createRepository(fsPath, changeCount) {
+function createRepository(fsPath, changeCount, currentBranch) {
   const indexChanges = Array.from({ length: changeCount }, (_, i) => ({ uri: { fsPath: `${fsPath}/file-${i}` } }));
   return {
     rootUri: { fsPath, toString: () => `file://${fsPath}` },
     name: fsPath.split('/').pop(),
+    currentBranch,
     state: { indexChanges, workingTreeChanges: [], mergeChanges: [], untrackedChanges: [] },
   };
 }
@@ -78,4 +79,22 @@ test('RepositoryTreeItem command always selects the repository', () => {
   const item = new RepositoryTreeItem(repo, undefined, false);
   assert.equal(item.command.command, 'scmRepositoryFilter.selectRepository');
   assert.equal(item.command.arguments[0], repo);
+});
+
+test('RepositoryTreeItem description shows the branch name after the path', () => {
+  const { RepositoryTreeItem, vscodeStub } = loadRepositoryTreeItemWithVscodeStub();
+  const item = new RepositoryTreeItem(createRepository('/workspace/repo', 1, 'feature/x'), undefined, false);
+  // 描述行 = 路径 · 分支名
+  assert.ok(String(item.description).includes('feature/x'));
+  assert.ok(String(item.description).endsWith('feature/x'));
+  // 分支名排在路径之后（用分隔符连接）
+  assert.match(item.description, /\/workspace\/repo · feature\/x/);
+  assert.match(item.tooltip, /Branch: feature\/x/);
+});
+
+test('RepositoryTreeItem description falls back to the bare path when there is no branch', () => {
+  const { RepositoryTreeItem, vscodeStub } = loadRepositoryTreeItemWithVscodeStub();
+  const item = new RepositoryTreeItem(createRepository('/workspace/repo', 1, undefined), undefined, false);
+  assert.equal(item.description, '/workspace/repo');
+  assert.ok(!String(item.tooltip).includes('Branch:'));
 });

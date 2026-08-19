@@ -1,97 +1,94 @@
 # SCM Repository Filter
 
-VS Code 插件：在 Source Control 侧边栏新增 `Changed Repositories` 和 `Changed Files` 视图，分别用于筛选改动仓库和查看当前仓库的改动文件。
+一个专注于 **多仓库 / monorepo 工作区** 的 Git 扩展。它把工作区所有 Git 仓库（含嵌套仓库）的改动和操作集中到一个视图中，避免在大工作区里被大量无关仓库的改动淹没。
 
-## 当前能力
+适合：
+- 一个工作区里有大量仓库，只想关注其中少数几个
+- monorepo 内嵌了多个独立 Git 仓库
+- 需要在多个仓库之间快速查看改动、暂存、提交、推送、切分支
 
-- 扫描当前 VS Code 工作区根目录及嵌套目录中的 Git 仓库，不依赖内置 Git 扩展的 `Repositories` 列表。
-- 过滤掉没有本地修改的仓库。
-- `Changed Repositories` 只显示改动仓库，点击仓库名称会选中仓库但不会跳转目录。
-- `Changed Files` 展示当前选中仓库的 Staged、Changes、Merge Changes 和 Untracked Changes。
-- 即使没有工作区文件，`Changes` 分组也会保留显示，数量显示为 `0`。
-- 点击文件节点打开 VS Code 原生 diff，查看代码改动点。
-- 文件节点支持 Stage、Unstage；工作区和未跟踪文件支持 Discard，Discard 前会确认。
-- `Changes` 分组支持一次性暂存所有工作区修改和未跟踪文件。
-- `Staged Changes` 分组支持一次性取消暂存所有已暂存文件。
-- 监听工作区和仓库文件的保存、创建、删除、重命名事件，实时刷新改动仓库列表。
-- 每秒对账一次本地 Git 状态缓存；文件变化时通过 Git CLI 刷新对应仓库状态。
-- 支持手动刷新命令和 `Changed Repositories` 标题栏刷新按钮；刷新时会主动执行 Git status。
-- 多仓库手动刷新最多并发执行 4 个 Git status，避免大型工作区出现命令拥挤或取消。
-- 超过 32 个仓库的大型工作区会先显示扫描到的仓库，再后台增量刷新 Git 状态，不会阻塞视图初始化。
-- 仓库节点箭头只负责展开/折叠，不再默认跳转目录。
-- `Changed Files` 下方提供 `Commit staged changes` 和 `Push to remote` 操作入口。
-- 提交入口使用 VS Code 原生输入框填写 commit message。
-- `Changed Repositories` 仓库节点支持 `Commit Staged`、`Pull`、`Push` 操作。
-- 仓库节点支持 `View Git Graph`，可直接查看该仓库的提交历史、分支和合并记录。
-- `Commit Staged` 只提交已经暂存的文件，不会自动暂存未暂存文件。
-- `Pull` 和 `Push` 使用当前分支配置的默认远程。
-- Stage、Unstage 成功后不显示提示；操作失败时显示错误提示并记录日志。
+## 功能总览
 
-## Git 操作
+扩展提供两个视图（位于源码管理 `SCM` 面板底部）：
 
-在 `Changed Repositories` 中右键仓库节点，或使用仓库节点旁的操作图标：
+| 视图 | 说明 |
+|---|---|
+| **Changed Repositories** | 列出有改动的仓库（及你手动固定的常驻仓库），显示每个仓库当前所在分支 |
+| **Changed Files** | 展示当前选中仓库的文件变更，按「已暂存 / 工作区改动 / 未跟踪 / 冲突」分组 |
 
-- `Commit Staged`：必须先暂存文件，再输入提交信息；提交只包含 Git index 中的文件。
-- `Pull`：拉取当前分支默认远程。
-- `Push`：推送当前分支默认远程。
-- `View Git Graph`：打开右键选中的仓库历史。该功能需要预先安装并启用 [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph) 扩展；多仓库工作区中会将选中仓库作为 Git Graph 的目标。
+## 仓库扫描模式（核心）
 
-操作完成后视图会自动刷新；失败信息会显示在 VS Code 提示中，并记录到 `SCM Repository Filter` 输出通道。
+扩展扫描仓库分两种模式，通过设置 `scmRepositoryFilter.scanMode` 切换（默认 `pinned`）：
 
-在 `Changed Files` 中：
+| 模式 | 行为 | 适用场景 |
+|---|---|---|
+| `pinned`（默认） | 只扫描 / 刷新**手动固定的仓库**，不递归扫工作区 | 嵌套仓库很多、只关注少数仓库的工作区 |
+| `all` | **递归扫描**工作区下所有仓库，有改动即显示 | 希望自动发现所有改动，覆盖 monorepo 嵌套仓库 |
 
-- 点击 `Commit staged changes`，在原生输入框中填写 message 后提交当前仓库的已暂存文件。
-- 点击 `Push to remote`，推送当前分支到默认远程。
-- 文件节点旁可以执行 Stage、Unstage 或 Discard。
-- `Changes` 分组标题旁可以暂存全部未暂存文件；`Staged Changes` 分组标题旁可以取消暂存全部文件。
-- Discard 会丢弃未提交修改，执行前需要确认。
+> 手动添加的固定仓库（见下）在**两种模式下都常驻显示**。
 
-## 安装到普通 VS Code
+### 手动固定仓库
 
-`F5` 只会启动临时的 Extension Development Host。要在普通 VS Code 中使用，先在项目目录执行：
+使用视图工具栏的 **Pin（+）** 按钮，输入仓库在 workspace 中的相对路径后缀（如 `acme/address`）即可添加一个固定仓库：
 
-```bash
-npm install
-npm run check
-npm test
-npm run package
-```
+- 固定仓库**无论是否有改动都常驻显示**在 Changed Repositories 中，带 📌 Pin 图标
+- 右键固定仓库可 **Unpin（移除固定）**
+- 固定列表保存在设置 `scmRepositoryFilter.pinnedRepositories`（相对路径数组，随项目提交可移植）
 
-命令会生成 `scm-repository-filter-0.2.0.vsix`。在普通 VS Code 中打开扩展面板，点击右上角 `...`，选择 **Install from VSIX...**，然后选择这个 `.vsix` 文件。安装完成后执行 **Developer: Reload Window**。
+## 仓库级操作
 
-也可以使用命令行安装：
+在每个仓库条目上（内联按钮 / 右键菜单）可执行：
 
-```bash
-code --install-extension scm-repository-filter-0.2.0.vsix
-```
+| 操作 | 说明 |
+|---|---|
+| **切分支** `$(git-branch)` | 弹出分支列表（本地 + 远端），选中即切换。远端分支（`origin/...`）会自动创建本地追踪分支；有未提交改动导致切分支失败时提示错误（不会自动 stash） |
+| **提交暂存** `$(git-commit)` | 提交该仓库**已暂存**的改动，弹出输入框填提交信息 |
+| **拉取** `$(cloud-download)` | 拉取 `git pull` |
+| **推送** `$(cloud-upload)` | 推送 `git push`。新分支首次推送自动带上游（`git push -u origin <分支>`） |
+| **查看 Git Graph** `$(history)` | 在该仓库根目录打开 [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph)（需先安装 Git Graph 扩展） |
 
-后续代码更新后，重新执行 `npm run package`，再安装新的 VSIX 即可。使用前请确认本机可以执行 `git` 命令。
+> 仓库条目上还直接显示**当前分支名**，一眼看清每个仓库在哪个分支。
 
-## 仓库检测范围
+## 文件级操作
 
-插件从 VS Code 当前工作区的根目录开始扫描，不会扫描整个磁盘，也不会改变原生 Source Control 的 `Repositories` 列表。
+选中某个仓库后，在 Changed Files 视图对文件 / 分组执行：
 
-扫描规则如下：
+- **暂存** / **取消暂存**（单文件，Staged / 未暂存）
+- **丢弃改动**（有二次确认）
+- **全部暂存** / **全部取消暂存**（按分组批量）
+- **打开改动**：显示文件的 diff / 内容对比
 
-- 扫描单根或多根工作区，以及工作区内嵌套的 Git 仓库。
-- 即使工作区根目录本身是 Git 仓库，也会继续扫描其中的其他嵌套仓库。
-- 默认最大扫描深度为 10。
-- 跳过 `.git`、`node_modules`、`dist`、`out` 和 `.vscode` 目录。
-- 同时识别 `.git` 目录和 `.git` 文件，兼容普通仓库、子模块和 worktree。
-- 没有打开工作区时不会执行扫描。
+## 命令
 
-状态和操作通过本机 Git CLI 执行：`status` 使用 `--porcelain=v1 -z`，暂存、取消暂存、丢弃、提交、拉取、推送和历史 diff 都不依赖 VS Code Git API。Git 未安装或单个仓库执行失败时，插件会在 `SCM Repository Filter` 输出通道记录错误，并继续处理其他仓库。
+| 命令 | 用途 |
+|---|---|
+| `SCM Repository Filter: Refresh Changed Repositories` | 手动强制刷新所有仓库状态 |
+| `SCM Repository Filter: Switch Branch` | 切换当前选中仓库的分支 |
 
-插件激活后会在 `SCM Repository Filter` 输出通道记录扫描到的仓库数量、文件事件命中的仓库和 status 刷新过程，便于排查检测范围与刷新问题。
+## 配置
 
-## 开发验证
+| 配置项 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `scmRepositoryFilter.scanMode` | `pinned` \| `all` | `pinned` | 扫描模式：只扫固定仓库，或递归扫工作区所有仓库 |
+| `scmRepositoryFilter.pinnedRepositories` | `string[]` | `[]` | 固定仓库相对路径后缀数组，如 `["acme/address"]` |
 
-```bash
-npm run check
-npm run build
-npm test
-```
+## 使用场景示例
 
-调试时在 VS Code 中打开本仓库，按 `F5` 启动 Extension Development Host，然后打开包含多个 Git 仓库的工作区，在 Source Control 侧边栏查看 `Changed Repositories` 和 `Changed Files`。
+**场景一：大 monorepo，只关注两个仓库**
+1. 保持默认 `pinned` 模式
+2. 点 Pin 按钮，分别输入 `packages/backend`、`packages/web` 固定
+3. 之后只在这两个仓库间工作，其它嵌套仓库的改动不会打扰你
 
-手动验证 Commit 时，可以准备一个已暂存文件和一个仅修改但未暂存的文件，执行 `Commit Staged` 后检查提交内容，确认只有已暂存文件进入提交。
+**场景二：想看当前所有仓库的改动**
+1. 设置 `scmRepositoryFilter.scanMode` 为 `all`
+2. 扩展递归扫描出所有仓库，有改动的自动出现
+
+## 已知限制
+
+- 切换远端分支时会创建本地追踪分支（等同 `git checkout -b <name> origin/<name>`），不会进入 detached HEAD
+- 切分支遇到未提交改动时会报错提示，需要你先处理改动（不自动 stash）
+- 「查看 Git Graph」依赖第三方 [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph) 扩展
+
+## 反馈
+
+使用中有问题或建议，欢迎在 [GitHub](https://github.com/cizhaYang/git-filter-repository) 提交 Issue。

@@ -4,9 +4,9 @@
 |---|---|
 | Change ID | feat-commit-push-buttons-20260816 |
 | 类型 | feat |
-| 状态 | CODED（待用户确认后提交） |
+| 状态 | DELIVERED |
 | 负责人 | Extension Owner Agent |
-| 起止时间 | 2026-08-16 ~ 2026-08-16 |
+| 起止时间 | 2026-08-16 ~ 2026-08-18 |
 | Spec | [request_analysis/spec.md](request_analysis/spec.md) |
 | Tasks | [request_analysis/tasks.md](request_analysis/tasks.md) |
 
@@ -18,7 +18,7 @@
 | 2 | 编码实现 | DONE | — | coding/coding_report_v1.md | 2026-08-16 |
 | 3 | 代码评审 | DONE | 1/2 | typescript-reviewer（Warn，0 CRITICAL/HIGH） | 2026-08-16 |
 | 4 | 测试与 CI | DONE | — | 88/88 全绿 + 真实 git 集成验证 | 2026-08-16 |
-| 5 | 提交与交付 | PENDING | — | 待用户确认 | — |
+| 5 | 提交与交付 | DONE | — | commit（实现随 6b8ea68 等一并提交） | 2026-08-18 |
 
 ## HITL 确认点 ①（需求）
 

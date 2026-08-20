@@ -2,7 +2,7 @@
   "name": "scm-repository-filter",
   "displayName": "SCM Repository Filter",
   "publisher": "local",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -171,7 +171,7 @@
         },
         {
           "command": "scmRepositoryFilter.openGitGraph",
-          "when": "view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository",
+          "when": "view == scmRepositoryFilter.changedRepositories && (viewItem == changedRepository || viewItem == pinnedRepository)",
           "group": "navigation"
         },
         {

@@ -40,7 +40,7 @@ test('extension manifest', () => {
   }
   assert.equal(manifest.contributes.menus['view/item/context']
     .find((item) => item.command === 'scmRepositoryFilter.openGitGraph').when,
-  'view == scmRepositoryFilter.changedRepositories && viewItem == changedRepository');
+  'view == scmRepositoryFilter.changedRepositories && (viewItem == changedRepository || viewItem == pinnedRepository)');
   for (const commandId of [
     'scmRepositoryFilter.selectRepository',
     'scmRepositoryFilter.stageChange',

@@ -38,6 +38,18 @@
 - `gitAvailable`: Git CLI 是否可用
 - 文案区分「打开工作区 / 无 Git / 确实无改动」，不把环境错误误报成"没有改动"。
 
+## PinnedRepositoryHistoryImportItem
+
+`src/domain/pinnedRepositoryHistory.ts` 对全局历史路径与当前工作区扫描结果的纯匹配计划：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| historyPath | string | 规范化后的用户级历史路径 |
+| status | `'pinned' \| 'matched' \| 'ambiguous' \| 'notFound'` | 当前工作区中的导入状态 |
+| candidateRoots | string[] | 唯一匹配根或歧义候选；未匹配为空 |
+
+历史的读写留在 `extension.ts` 的 `globalState` 薄壳；domain 只负责未知值过滤、稳定去重、删除决策和导入分类。
+
 ## 业务规则（隐性约束）
 
 - 仓库是否 dirty 由 4 类变更总和决定，未跟踪也算。

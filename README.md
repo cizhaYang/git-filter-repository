@@ -40,6 +40,17 @@
 - 固定列表保存在设置 `scmRepositoryFilter.pinnedRepositories`（相对工作区根目录的路径数组，随项目提交可移植）
 - 工作区中移动固定仓库后，原路径可能失效，需要重新 Pin
 
+### 历史仓库与跨项目导入
+
+每次成功 Pin 的仓库路径都会保存到扩展的本机历史中；升级后首次打开已有项目时，当前固定列表也会自动合并到历史。打开另一个结构相似的项目后，点击 Changed Repositories 工具栏的 **Repository History（历史）** 按钮即可：
+
+- 查看曾经固定过的全部仓库路径，勾选部分项目后添加到当前工作区
+- 使用列表顶部的 **Add all available history entries** 一键导入当前工作区能匹配的全部历史仓库
+- 同名路径匹配多个仓库时，按提示选择实际要添加的仓库
+- 点击每项右侧的删除按钮，仅删除本机历史记录；不会移除当前项目已经固定的仓库
+
+历史只保存相对路径后缀，不会复制 Git 仓库文件，也不会自动修改新项目的配置。当前项目不存在的历史项会保留在列表中，但不能导入。
+
 ## 仓库级操作
 
 在每个仓库条目上（内联按钮 / 右键菜单）可执行：
@@ -73,6 +84,7 @@
 |---|---|
 | `SCM Repository Filter: Refresh Changed Repositories` | 手动强制刷新所有仓库状态 |
 | `SCM Repository Filter: Pin Repository` | 输入路径后缀并固定一个仓库，使其常驻显示 |
+| `SCM Repository Filter: Manage Repository History` | 查看、选择导入或删除本机保存的固定仓库历史 |
 | `SCM Repository Filter: Unpin Repository` | 移除当前固定仓库 |
 | `SCM Repository Filter: Switch Branch` | 列出本地和远端分支并切换当前仓库分支 |
 | `SCM Repository Filter: Commit Staged` | 输入提交信息并提交当前仓库已暂存的改动 |

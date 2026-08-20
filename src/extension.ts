@@ -14,6 +14,13 @@ import {
 } from './domain/repositoryActions';
 import { getRepositoryDisplayName } from './domain/repositoryQueries';
 import { nextPinnedRelativePaths, removePinnedRelativePath, resolvePinnedRepositories } from './domain/pinnedRepositories';
+import {
+  createPinnedRepositoryHistoryImportPlan,
+  mergePinnedRepositoryHistory,
+  normalizePinnedRepositoryHistory,
+  removePinnedRepositoryHistoryEntry,
+  type PinnedRepositoryHistoryImportItem,
+} from './domain/pinnedRepositoryHistory';
 import { getRepositoryChangeFiles, type RepositoryChangeFile } from './domain/repositoryChangeFiles';
 import { openRepositoryGitGraph } from './domain/gitGraph';
 import { GIT_BLOB_DOCUMENT_SCHEME, GitBlobDocumentProvider } from './git/gitBlobDocumentProvider';
@@ -26,11 +33,14 @@ import { FileChangeTreeItem } from './views/fileChangeTreeItem';
 import { RepositorySelectionState } from './views/repositorySelectionState';
 import { RepositoryTreeItem } from './views/repositoryTreeItem';
 
+const PINNED_REPOSITORY_HISTORY_KEY = 'pinnedRepositoryHistory';
+
 /**
  * 这里把工作区扫描器、TreeDataProvider 和命令统一装配起来，所有 Git 操作都走本地 CLI。
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const outputChannel = vscode.window.createOutputChannel('SCM Repository Filter');
+  await mergeCurrentPinnedRepositoriesIntoHistory(context);
   const selectionState = new RepositorySelectionState();
   const repositoriesProvider = new ChangedRepositoriesProvider({
     workspaceRoots: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
@@ -70,7 +80,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     gitBlobDocumentRegistration,
     vscode.commands.registerCommand('scmRepositoryFilter.refresh', () => repositoriesProvider.refreshFromGitStatus()),
     vscode.commands.registerCommand('scmRepositoryFilter.pinRepository', async () => {
-      await pinRepository(repositoriesProvider, outputChannel);
+      await pinRepository(context, repositoriesProvider, outputChannel);
+    }),
+    vscode.commands.registerCommand('scmRepositoryFilter.manageRepositoryHistory', async () => {
+      await managePinnedRepositoryHistory(context, repositoriesProvider, outputChannel);
     }),
     vscode.commands.registerCommand('scmRepositoryFilter.unpinRepository', async (target: unknown) => {
       await unpinRepository(target, repositoriesProvider);
@@ -503,7 +516,232 @@ function getFilesActionLabel(action: RepositoryFilesAction): string {
   return action === 'stageAll' ? 'Stage all changes' : 'Unstage all changes';
 }
 
+interface PinnedRepositoryHistoryQuickPickItem extends vscode.QuickPickItem {
+  historyPath: string;
+  importItem: PinnedRepositoryHistoryImportItem;
+}
+
+interface PinnedRepositoryHistoryImportResult {
+  imported: number;
+  alreadyPinned: number;
+  notFound: number;
+  cancelledAmbiguous: number;
+}
+
+/**
+ * 历史属于用户级记忆，工作区固定项属于项目级配置。激活时只做单向合并，避免升级后旧项目配置无法复用。
+ */
+async function mergeCurrentPinnedRepositoriesIntoHistory(context: vscode.ExtensionContext): Promise<void> {
+  const current = currentPinnedRelativePaths();
+  const existing = context.globalState.get<unknown>(PINNED_REPOSITORY_HISTORY_KEY);
+  const merged = mergePinnedRepositoryHistory(existing, current);
+  if (sameStringList(normalizePinnedRepositoryHistory(existing), merged)) {
+    return;
+  }
+  await context.globalState.update(PINNED_REPOSITORY_HISTORY_KEY, merged);
+}
+
+async function addPinnedRepositoryHistoryEntry(
+  context: vscode.ExtensionContext,
+  relativePath: string,
+): Promise<void> {
+  const existing = context.globalState.get<unknown>(PINNED_REPOSITORY_HISTORY_KEY);
+  const merged = mergePinnedRepositoryHistory(existing, [relativePath]);
+  if (sameStringList(normalizePinnedRepositoryHistory(existing), merged)) {
+    return;
+  }
+  await context.globalState.update(PINNED_REPOSITORY_HISTORY_KEY, merged);
+}
+
+async function managePinnedRepositoryHistory(
+  context: vscode.ExtensionContext,
+  provider: ChangedRepositoriesProvider,
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const history = normalizePinnedRepositoryHistory(
+    context.globalState.get<unknown>(PINNED_REPOSITORY_HISTORY_KEY),
+  );
+  if (history.length === 0) {
+    vscode.window.showInformationMessage('No repository history yet. Pin a repository to add it here.');
+    return;
+  }
+
+  const repositoryRoots = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Finding repositories for history import',
+    },
+    () => provider.discoverAllRepositoryRoots(),
+  );
+  let plan = createPinnedRepositoryHistoryImportPlan(
+    repositoryRoots,
+    history,
+    currentPinnedRelativePaths(),
+  );
+  const quickPick = vscode.window.createQuickPick<PinnedRepositoryHistoryQuickPickItem>();
+  const importAllButton: vscode.QuickInputButton = {
+    iconPath: new vscode.ThemeIcon('add'),
+    tooltip: 'Add all available history entries',
+  };
+  const deleteButton: vscode.QuickInputButton = {
+    iconPath: new vscode.ThemeIcon('trash'),
+    tooltip: 'Delete from repository history',
+  };
+  quickPick.title = 'Repository History';
+  quickPick.placeholder = 'Select repositories to add to this workspace';
+  quickPick.canSelectMany = true;
+  quickPick.matchOnDescription = true;
+  quickPick.buttons = [importAllButton];
+
+  const refreshItems = () => {
+    quickPick.items = plan.map((item) => ({
+      label: item.historyPath,
+      description: getPinnedRepositoryHistoryItemDescription(item),
+      detail: item.status === 'ambiguous' ? item.candidateRoots.join(' | ') : undefined,
+      buttons: [deleteButton],
+      historyPath: item.historyPath,
+      importItem: item,
+    }));
+  };
+  refreshItems();
+
+  quickPick.onDidAccept(() => {
+    void runPinnedRepositoryHistoryQuickPickAction(quickPick, outputChannel, async () => {
+      const result = await importPinnedRepositoryHistoryItems(
+        quickPick.selectedItems.map((item) => item.importItem),
+        provider,
+        outputChannel,
+      );
+      quickPick.hide();
+      showPinnedRepositoryHistoryImportResult(result);
+    });
+  });
+  quickPick.onDidTriggerButton((button) => {
+    if (button !== importAllButton) {
+      return;
+    }
+    void runPinnedRepositoryHistoryQuickPickAction(quickPick, outputChannel, async () => {
+      const result = await importPinnedRepositoryHistoryItems(plan, provider, outputChannel);
+      quickPick.hide();
+      showPinnedRepositoryHistoryImportResult(result);
+    });
+  });
+  quickPick.onDidTriggerItemButton((event) => {
+    if (event.button !== deleteButton) {
+      return;
+    }
+    const nextHistory = removePinnedRepositoryHistoryEntry(
+      context.globalState.get<unknown>(PINNED_REPOSITORY_HISTORY_KEY),
+      event.item.historyPath,
+    );
+    void runPinnedRepositoryHistoryQuickPickAction(quickPick, outputChannel, async () => {
+      await context.globalState.update(PINNED_REPOSITORY_HISTORY_KEY, nextHistory);
+      plan = plan.filter((item) => item.historyPath !== event.item.historyPath);
+      refreshItems();
+      outputChannel.appendLine(`[history] Deleted "${event.item.historyPath}" from global repository history.`);
+    });
+  });
+  quickPick.onDidHide(() => quickPick.dispose());
+  quickPick.show();
+}
+
+/** Quick Pick 事件不会等待 Promise；统一捕获写入失败，避免未处理 rejection 和静默丢数据。 */
+async function runPinnedRepositoryHistoryQuickPickAction(
+  quickPick: vscode.QuickPick<PinnedRepositoryHistoryQuickPickItem>,
+  outputChannel: vscode.OutputChannel,
+  action: () => Promise<void>,
+): Promise<void> {
+  quickPick.busy = true;
+  quickPick.enabled = false;
+  try {
+    await action();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`[history] Repository history operation failed: ${detail}`);
+    vscode.window.showErrorMessage(`Repository history operation failed: ${detail}`);
+  } finally {
+    quickPick.busy = false;
+    quickPick.enabled = true;
+  }
+}
+
+function getPinnedRepositoryHistoryItemDescription(item: PinnedRepositoryHistoryImportItem): string {
+  switch (item.status) {
+    case 'pinned':
+      return 'already added to this workspace';
+    case 'matched':
+      return 'available to add';
+    case 'ambiguous':
+      return 'choose a matching repository when adding';
+    case 'notFound':
+      return 'not found in this workspace';
+  }
+}
+
+async function importPinnedRepositoryHistoryItems(
+  selected: readonly PinnedRepositoryHistoryImportItem[],
+  provider: ChangedRepositoriesProvider,
+  outputChannel: vscode.OutputChannel,
+): Promise<PinnedRepositoryHistoryImportResult> {
+  const current = currentPinnedRelativePaths();
+  let next: readonly string[] = current;
+  let imported = 0;
+  let alreadyPinned = 0;
+  let notFound = 0;
+  let cancelledAmbiguous = 0;
+
+  for (const item of selected) {
+    if (item.status === 'pinned') {
+      alreadyPinned += 1;
+      continue;
+    }
+    if (item.status === 'notFound') {
+      notFound += 1;
+      continue;
+    }
+    const targetRoot = item.status === 'matched'
+      ? item.candidateRoots[0]
+      : await chooseAmbiguousRoot([{ candidateRoots: item.candidateRoots }], item.historyPath);
+    if (!targetRoot) {
+      cancelledAmbiguous += 1;
+      continue;
+    }
+    const relativePath = provider.toWorkspaceRelative(targetRoot);
+    const updated = nextPinnedRelativePaths(next, relativePath);
+    if (updated.length === next.length) {
+      alreadyPinned += 1;
+      continue;
+    }
+    next = updated;
+    imported += 1;
+  }
+
+  if (imported > 0) {
+    await updatePinnedRelativePaths(next);
+    outputChannel.appendLine(`[history] Imported ${imported} repository entries into the current workspace.`);
+  }
+  return { imported, alreadyPinned, notFound, cancelledAmbiguous };
+}
+
+function showPinnedRepositoryHistoryImportResult(result: PinnedRepositoryHistoryImportResult): void {
+  const skipped = result.alreadyPinned + result.notFound + result.cancelledAmbiguous;
+  if (result.imported === 0) {
+    vscode.window.showInformationMessage(
+      skipped > 0 ? `No repositories added. ${skipped} history entries were skipped.` : 'No repositories selected.',
+    );
+    return;
+  }
+  vscode.window.showInformationMessage(
+    `Added ${result.imported} repositories from history.${skipped > 0 ? ` Skipped ${skipped}.` : ''}`,
+  );
+}
+
+function sameStringList(first: readonly string[], second: readonly string[]): boolean {
+  return first.length === second.length && first.every((entry, index) => entry === second[index]);
+}
+
 async function pinRepository(
+  context: vscode.ExtensionContext,
   provider: ChangedRepositoriesProvider,
   outputChannel: vscode.OutputChannel,
 ): Promise<void> {
@@ -555,6 +793,7 @@ async function pinRepository(
     return;
   }
   await updatePinnedRelativePaths(next);
+  await addPinnedRepositoryHistoryEntry(context, relativePath);
   outputChannel.appendLine(`[pin] Pinned "${relativePath}".`);
 }
 

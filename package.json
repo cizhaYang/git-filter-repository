@@ -2,7 +2,7 @@
   "name": "scm-repository-filter",
   "displayName": "SCM Repository Filter",
   "publisher": "local",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -125,6 +125,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "scmRepositoryFilter.manageRepositoryHistory",
+        "title": "Manage Repository History",
+        "icon": "$(history)"
+      },
+      {
         "command": "scmRepositoryFilter.unpinRepository",
         "title": "Unpin Repository",
         "icon": "$(close)"
@@ -144,6 +149,11 @@
         },
         {
           "command": "scmRepositoryFilter.pinRepository",
+          "when": "view == scmRepositoryFilter.changedRepositories",
+          "group": "navigation"
+        },
+        {
+          "command": "scmRepositoryFilter.manageRepositoryHistory",
           "when": "view == scmRepositoryFilter.changedRepositories",
           "group": "navigation"
         }
@@ -222,7 +232,6 @@
     "package": "npm run build && vsce package",
     "check": "node ./node_modules/typescript/bin/tsc --noEmit",
     "test": "node --test",
-    "test:unit": "node --test test/unit",
     "test:unit": "node --test test/unit",
     "harness:doctor": "node scripts/harness-doctor.mjs",
     "harness:new-change": "node scripts/new-change.mjs"

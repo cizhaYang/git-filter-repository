@@ -15,6 +15,13 @@ test('extension manifest', () => {
   assert.match(refreshViewMenu.when, /view == scmRepositoryFilter\.changedRepositories/);
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.openChange'));
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.openGitGraph'));
+  assert.ok(manifest.contributes.commands.some(
+    (command) => command.command === 'scmRepositoryFilter.manageRepositoryHistory'));
+  const historyViewMenu = manifest.contributes.menus['view/title']
+    .find((item) => item.command === 'scmRepositoryFilter.manageRepositoryHistory');
+  assert.ok(historyViewMenu);
+  assert.match(historyViewMenu.when, /view == scmRepositoryFilter\.changedRepositories/);
+  assert.equal(historyViewMenu.group, 'navigation');
   assert.ok(manifest.contributes.commands.some((command) => command.command === 'scmRepositoryFilter.commitStaged'));
   for (const commandId of [
     'scmRepositoryFilter.commitStaged',

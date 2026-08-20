@@ -55,6 +55,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   private treeRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private statusRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private repositoryScanTimer: ReturnType<typeof setTimeout> | undefined;
+  private repositoryRefreshGeneration = 0;
   private stateReconciliationTimer: ReturnType<typeof setInterval> | undefined;
   private repositoryStateSignature = '';
   private refreshAllStatuses = false;
@@ -92,6 +93,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   async initialize(): Promise<void> {
+    const initializationGeneration = ++this.repositoryRefreshGeneration;
     if (this.scanMode === 'pinned') {
       await this.refreshPinnedRepositories();
       return;
@@ -99,6 +101,9 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     if (this.scanner.scanWorkspaceRoots) {
       try {
         const workspaceRepositories = await this.scanner.scanWorkspaceRoots(this.workspaceRoots);
+        if (initializationGeneration !== this.repositoryRefreshGeneration || this.scanMode !== 'all') {
+          return;
+        }
         if (workspaceRepositories.length > 0) {
           const repositories = this.replaceRepositories(workspaceRepositories);
           this.refresh();
@@ -134,6 +139,9 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   async refreshRepositories(): Promise<void> {
+    // 配置切换或连续扫描会产生并行任务；只有最新代际可以改写仓库集合，
+    // 避免旧 all 扫描在切回 pinned 后完成并把非固定仓库重新带回视图。
+    const refreshGeneration = ++this.repositoryRefreshGeneration;
     if (this.scanMode === 'pinned') {
       await this.refreshPinnedRepositories();
       return;
@@ -144,6 +152,10 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     } catch (error) {
       this.logger?.appendLine(`[scan] Unable to scan workspace repositories: ${String(error)}`);
       repositoryRoots = [];
+    }
+    if (refreshGeneration !== this.repositoryRefreshGeneration) {
+      this.logger?.appendLine('[scan] Ignored stale repository scan result after configuration or scan change.');
+      return;
     }
 
     const repositories = this.replaceRepositories(repositoryRoots);

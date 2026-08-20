@@ -212,6 +212,84 @@ test('switching scanMode from pinned to all rebuilds and scans all repositories'
   assert.equal(scanCalls, 1);
 });
 
+test('switching scanMode from all to pinned ignores a stale all-mode scan result', async (context) => {
+  const { ChangedRepositoriesProvider, vscodeStub } = loadProviderWithVscodeStub();
+  const repositories = {
+    '/workspace/pinned': createRepository('/workspace/pinned', false),
+    '/workspace/dirty': createRepository('/workspace/dirty', true),
+  };
+  let completeAllScan;
+  const allScan = new Promise((resolve) => {
+    completeAllScan = resolve;
+  });
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scanWorkspaceRoots: async () => [],
+      scan: async () => allScan,
+    },
+    repositoryFactory: (root) => repositories[root],
+    scanMode: 'all',
+    getPinnedRelativePaths: () => ['pinned'],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  // initialize 会在后台启动 all 模式递归扫描，但不会等待其完成。
+  await provider.initialize();
+  await vscodeStub.config.update('scanMode', 'pinned');
+  vscodeStub.config.fireChange();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(provider.getChildren().map((item) => item.repository.rootUri.fsPath), ['/workspace/pinned']);
+
+  // 模式切换前启动的扫描即使稍后完成，也不能把非固定仓库写回 pinned 视图。
+  completeAllScan(Object.keys(repositories));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(provider.getChildren().map((item) => item.repository.rootUri.fsPath), ['/workspace/pinned']);
+});
+
+test('switching scanMode from all to pinned never publishes a stale initialization scan result', async (context) => {
+  const { ChangedRepositoriesProvider, vscodeStub } = loadProviderWithVscodeStub();
+  const repositories = {
+    '/workspace/pinned': createRepository('/workspace/pinned', false),
+    '/workspace/dirty': createRepository('/workspace/dirty', true),
+  };
+  let completeWorkspaceRootScan;
+  const workspaceRootScan = new Promise((resolve) => {
+    completeWorkspaceRootScan = resolve;
+  });
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scanWorkspaceRoots: async () => workspaceRootScan,
+      scan: async () => Object.keys(repositories),
+    },
+    repositoryFactory: (root) => repositories[root],
+    scanMode: 'all',
+    getPinnedRelativePaths: () => ['pinned'],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  const initializePromise = provider.initialize();
+  await vscodeStub.config.update('scanMode', 'pinned');
+  const publishedRoots = [];
+  const subscription = provider.onDidChangeTreeData(() => {
+    publishedRoots.push(provider.getChildren().map((item) => item.repository.rootUri.fsPath).sort());
+  });
+  context.after(() => subscription.dispose());
+  vscodeStub.config.fireChange();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  completeWorkspaceRootScan(['/workspace/dirty']);
+  await initializePromise;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.ok(publishedRoots.length > 0);
+  assert.deepEqual(
+    publishedRoots,
+    publishedRoots.map(() => ['/workspace/pinned']),
+  );
+});
+
 test('all mode with no changes but pinned repos present does not report "no changed repositories"', async (context) => {
   const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
   const provider = new ChangedRepositoriesProvider({

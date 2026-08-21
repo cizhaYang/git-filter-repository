@@ -92,5 +92,24 @@ test('extension manifest', () => {
   assert.ok(switchIndex >= 0 && commitIndex >= 0 && switchIndex < commitIndex,
     'switchBranch inline button should precede commit');
 
+  const moreCommand = manifest.contributes.commands.find(
+    (command) => command.command === 'scmRepositoryFilter.repositoryMoreActions');
+  assert.ok(moreCommand);
+  assert.equal(moreCommand.icon, '$(ellipsis)');
+  const moreMenu = manifest.contributes.menus['view/item/context']
+    .find((item) => item.command === 'scmRepositoryFilter.repositoryMoreActions');
+  assert.ok(moreMenu);
+  assert.match(moreMenu.when, /view == scmRepositoryFilter\.changedRepositories/);
+  assert.match(moreMenu.when, /viewItem == changedRepository/);
+  assert.match(moreMenu.when, /viewItem == pinnedRepository/);
+  assert.equal(moreMenu.group, 'inline@999');
+  const allRepositoryInlineItems = manifest.contributes.menus['view/item/context']
+    .filter((item) => item.when?.includes('scmRepositoryFilter.changedRepositories')
+      && item.group?.startsWith('inline'));
+  const inlineOrder = (item) => Number(item.group.split('@')[1] ?? 0);
+  assert.ok(allRepositoryInlineItems
+    .filter((item) => item !== moreMenu)
+    .every((item) => inlineOrder(item) < inlineOrder(moreMenu)));
+
   assert.ok(manifest.activationEvents.includes('onView:scmRepositoryFilter.changedRepositories'));
 });

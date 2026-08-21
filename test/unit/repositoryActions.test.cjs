@@ -3,6 +3,7 @@ const test = require('node:test');
 const { setTimeout: delay } = require('node:timers/promises');
 const {
   hasStagedChanges,
+  hasTrackedChangesForStash,
   needsFallbackRefresh,
   refreshRepositoryStatuses,
   runRepositoryAction,
@@ -18,6 +19,21 @@ function repository(state = { indexChanges: [], workingTreeChanges: [], mergeCha
     push: async () => calls.push(['push']),
   };
 }
+
+test('stash eligibility includes tracked changes but excludes untracked-only changes', () => {
+  assert.equal(hasTrackedChangesForStash(repository({
+    indexChanges: [{}], workingTreeChanges: [], mergeChanges: [], untrackedChanges: [],
+  })), true);
+  assert.equal(hasTrackedChangesForStash(repository({
+    indexChanges: [], workingTreeChanges: [{}], mergeChanges: [], untrackedChanges: [],
+  })), true);
+  assert.equal(hasTrackedChangesForStash(repository({
+    indexChanges: [], workingTreeChanges: [], mergeChanges: [{}], untrackedChanges: [],
+  })), true);
+  assert.equal(hasTrackedChangesForStash(repository({
+    indexChanges: [], workingTreeChanges: [], mergeChanges: [], untrackedChanges: [{}],
+  })), false);
+});
 
 test('staged commit requires at least one index change', async () => {
   const clean = repository();

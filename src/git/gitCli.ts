@@ -14,6 +14,11 @@ export interface GitExecResult {
 
 export type GitUntrackedFilesMode = 'all' | 'normal';
 
+export interface GitStashEntry {
+  ref: string;
+  description: string;
+}
+
 export type GitExecutor = (
   file: string,
   args: readonly string[],
@@ -59,6 +64,26 @@ export class GitCli {
 
   async commit(rootPath: string, message: string): Promise<void> {
     await this.run(rootPath, ['commit', '-m', message]);
+  }
+
+  /**
+   * 只保存 Git 已跟踪文件的当前改动；不传 --include-untracked，保持 Git 默认 stash 语义。
+   * message 作为独立 argv 传入，避免用户输入被 shell 重新解释。
+   */
+  async stash(rootPath: string, message: string): Promise<void> {
+    await this.run(rootPath, ['stash', 'push', '-m', message]);
+  }
+
+  /**
+   * 用 NUL 分隔 ref 与 subject，避免 stash 描述中的冒号、空格或非 ASCII 字符破坏解析。
+   */
+  async listStashes(rootPath: string): Promise<GitStashEntry[]> {
+    const result = await this.run(rootPath, ['stash', 'list', '--format=%gd%x00%gs%x00']);
+    return parseStashList(result.stdout);
+  }
+
+  async applyStash(rootPath: string, ref: string): Promise<void> {
+    await this.run(rootPath, ['stash', 'apply', ref]);
   }
 
   async pull(rootPath: string): Promise<void> {
@@ -166,4 +191,26 @@ export class GitCli {
   private run(rootPath: string, args: readonly string[]): Promise<GitExecResult> {
     return this.execute('git', ['-C', rootPath, ...args], EXEC_OPTIONS);
   }
+}
+
+function parseStashList(output: string): GitStashEntry[] {
+  const fields = output.replace(/\r?\n/g, '').split('\0');
+  if (fields.length === 1 && fields[0] === '') {
+    return [];
+  }
+
+  const entries: GitStashEntry[] = [];
+  for (let index = 0; index < fields.length; index += 2) {
+    const ref = fields[index]?.trim() ?? '';
+    // description 是用户可见的 subject；只去掉格式分隔产生的换行，保留其余原文。
+    const description = fields[index + 1] ?? '';
+    if (!ref && !description) {
+      continue;
+    }
+    if (!ref || !description) {
+      throw new Error('Invalid git stash list output.');
+    }
+    entries.push({ ref, description });
+  }
+  return entries;
 }

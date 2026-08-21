@@ -62,6 +62,16 @@ export function hasStagedChanges(repository: Pick<GitRepositoryLike, 'state'>): 
 }
 
 /**
+ * Git 默认 stash 不包含 untracked 文件；因此只有 tracked/index、working tree 或 merge 改动
+ * 才能进入 stash 流程，避免仅有未跟踪文件时给出误导性的成功反馈。
+ */
+export function hasTrackedChangesForStash(repository: Pick<GitRepositoryLike, 'state'>): boolean {
+  return repository.state.indexChanges.length > 0
+    || repository.state.workingTreeChanges.length > 0
+    || repository.state.mergeChanges.length > 0;
+}
+
+/**
  * 统一封装仓库操作，让 UI 层只处理输入、进度和提示，不重复 Git 调用规则。
  */
 export async function runRepositoryAction(

@@ -58,6 +58,7 @@
 | `scmRepositoryFilter.openChange` | 打开变更 | changedFiles item |
 | `scmRepositoryFilter.commitStaged` | 提交已暂存 | changedRepositories item |
 | `scmRepositoryFilter.switchBranch` | 切换分支（弹分支列表） | changedRepositories item |
+| `scmRepositoryFilter.repositoryMoreActions` | 打开 Stash / Apply Stash 更多操作 | changedRepositories item |
 | `scmRepositoryFilter.pull` | Pull | changedRepositories item |
 | `scmRepositoryFilter.push` | Push | changedRepositories item |
 | `scmRepositoryFilter.stageChange` | Stage 单文件 | changedFiles item |

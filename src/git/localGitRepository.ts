@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { GitCli, type GitUntrackedFilesMode } from './gitCli';
+import { GitCli, type GitStashEntry, type GitUntrackedFilesMode } from './gitCli';
 import type { ParsedGitChange } from './gitStatusParser';
 import { toRepositoryRelativePath } from './localGitRepositoryPaths';
 
@@ -34,6 +34,9 @@ export interface GitRepositoryLike {
   commit(message: string, options?: { all?: boolean }): Promise<void>;
   pull(): Promise<void>;
   push(): Promise<void>;
+  stash(message: string): Promise<void>;
+  listStashes(): Promise<GitStashEntry[]>;
+  applyStash(ref: string): Promise<void>;
   add(paths: string[]): Promise<void>;
   revert(paths: string[]): Promise<void>;
   clean(paths: string[]): Promise<void>;
@@ -85,6 +88,18 @@ export class LocalGitRepository implements GitRepositoryLike {
 
   async push(): Promise<void> {
     await this.gitCli.push(this.rootUri.fsPath);
+  }
+
+  stash(message: string): Promise<void> {
+    return this.gitCli.stash(this.rootUri.fsPath, message);
+  }
+
+  listStashes(): Promise<GitStashEntry[]> {
+    return this.gitCli.listStashes(this.rootUri.fsPath);
+  }
+
+  applyStash(ref: string): Promise<void> {
+    return this.gitCli.applyStash(this.rootUri.fsPath, ref);
   }
 
   listBranches(): Promise<string[]> {

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { getChangeOpenPlan, getGitBlobRef } from './domain/changeOpenPlan';
 import {
   hasStagedChanges,
+  hasTrackedChangesForStash,
   needsFallbackRefresh,
   runRepositoryAction,
   runRepositoryFileAction,
@@ -124,6 +125,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand('scmRepositoryFilter.switchBranch', async (target: unknown) => {
       await switchBranch(target, repositoriesProvider, outputChannel);
+    }),
+    vscode.commands.registerCommand('scmRepositoryFilter.repositoryMoreActions', async (target: unknown) => {
+      await showRepositoryMoreActions(target, repositoriesProvider, outputChannel);
     }),
     vscode.commands.registerCommand('scmRepositoryFilter.stageChange', async (target: unknown) => {
       await runFileAction(target, 'stage', repositoriesProvider, filesProvider, outputChannel);
@@ -340,6 +344,143 @@ async function switchBranch(
     outputChannel.appendLine(`[switchBranch] ${repository.rootUri.fsPath}: ${detail}`);
     // 有未提交改动等冲突时，直接透出 git 报错；不自动 stash。
     vscode.window.showErrorMessage(`Failed to switch ${displayName} to ${branchName}: ${detail}`);
+  }
+}
+
+type RepositoryMoreAction = 'stash' | 'applyStash';
+
+/**
+ * Tree View 的行内菜单不支持嵌套子菜单；ellipsis 命令统一弹出 Quick Pick，
+ * 避免 Stash 相关低频操作继续挤占仓库行宽度。
+ */
+async function showRepositoryMoreActions(
+  target: unknown,
+  provider: ChangedRepositoriesProvider,
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const repository = resolveRepositoryTarget(target);
+  if (!repository) {
+    vscode.window.showErrorMessage('No Git repository was selected.');
+    return;
+  }
+
+  const displayName = getRepositoryDisplayName(repository.rootUri.fsPath, repository.name);
+  const picked = await vscode.window.showQuickPick<{
+    label: string;
+    action: RepositoryMoreAction;
+  }>([
+    { label: 'Stash', action: 'stash' },
+    { label: 'Apply Stash', action: 'applyStash' },
+  ], {
+    placeHolder: `Select an action for ${displayName}`,
+  });
+  if (!picked) {
+    return;
+  }
+
+  if (picked.action === 'stash') {
+    await createRepositoryStash(repository, provider, outputChannel);
+    return;
+  }
+  await selectAndApplyRepositoryStash(repository, provider, outputChannel);
+}
+
+async function createRepositoryStash(
+  repository: GitRepositoryLike,
+  provider: ChangedRepositoriesProvider,
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const displayName = getRepositoryDisplayName(repository.rootUri.fsPath, repository.name);
+  if (!hasTrackedChangesForStash(repository)) {
+    vscode.window.showInformationMessage(`No tracked changes to stash in ${displayName}.`);
+    return;
+  }
+
+  const message = await vscode.window.showInputBox({
+    prompt: `Stash tracked changes in ${displayName}`,
+    placeHolder: 'Stash message',
+    ignoreFocusOut: true,
+    validateInput: (value) => value.trim() ? undefined : 'Stash message is required.',
+  });
+  if (message === undefined) {
+    return;
+  }
+
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Stashing changes in ${displayName}`,
+      },
+      () => repository.stash(message.trim()),
+    );
+    provider.scheduleStatusRefresh([repository]);
+    vscode.window.showInformationMessage(`Stash created for ${displayName}.`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`[stash] ${repository.rootUri.fsPath}: ${detail}`);
+    vscode.window.showErrorMessage(`Stash failed for ${displayName}: ${detail}`);
+  }
+}
+
+async function selectAndApplyRepositoryStash(
+  repository: GitRepositoryLike,
+  provider: ChangedRepositoriesProvider,
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const displayName = getRepositoryDisplayName(repository.rootUri.fsPath, repository.name);
+  let stashes: Awaited<ReturnType<GitRepositoryLike['listStashes']>>;
+  try {
+    stashes = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Loading stashes for ${displayName}`,
+      },
+      () => repository.listStashes(),
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`[listStashes] ${repository.rootUri.fsPath}: ${detail}`);
+    vscode.window.showErrorMessage(`Unable to list stashes for ${displayName}: ${detail}`);
+    return;
+  }
+
+  if (stashes.length === 0) {
+    vscode.window.showInformationMessage(`No stashes found in ${displayName}.`);
+    return;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    stashes.map((stash) => ({
+      label: stash.ref,
+      detail: stash.description,
+      stash,
+    })),
+    {
+      placeHolder: `Select a stash to apply in ${displayName}`,
+      matchOnDetail: true,
+    },
+  );
+  if (!picked) {
+    return;
+  }
+
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Applying ${picked.stash.ref} in ${displayName}`,
+      },
+      () => repository.applyStash(picked.stash.ref),
+    );
+    vscode.window.showInformationMessage(`Applied ${picked.stash.ref} in ${displayName}.`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`[applyStash] ${repository.rootUri.fsPath}/${picked.stash.ref}: ${detail}`);
+    vscode.window.showErrorMessage(`Failed to apply ${picked.stash.ref} in ${displayName}: ${detail}`);
+  } finally {
+    // apply 冲突时 Git 也可能已部分改写工作区或 index，失败路径同样必须重新读取状态。
+    provider.scheduleStatusRefresh([repository]);
   }
 }
 

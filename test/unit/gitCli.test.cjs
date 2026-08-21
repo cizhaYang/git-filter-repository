@@ -324,3 +324,46 @@ test('git cli checkoutBranch keeps special characters as single argv token witho
 
   assert.deepEqual(calls[0].args, ['-C', '/workspace/repo', 'checkout', 'feature/修复$ bug']);
 });
+
+test('git cli creates, lists, and applies stashes with structured entries', async () => {
+  const calls = [];
+  const cli = new GitCli(async (file, args) => {
+    calls.push({ file, args });
+    if (args.includes('list')) {
+      return {
+        stdout: 'stash@{0}\0On main: WIP: first\0\nstash@{1}\0On feature/x: 修复: second item\0\n',
+        stderr: '',
+      };
+    }
+    return { stdout: '', stderr: '' };
+  });
+
+  await cli.stash('/workspace/repo', 'WIP: 修复 $PATH');
+  const stashes = await cli.listStashes('/workspace/repo');
+  await cli.applyStash('/workspace/repo', 'stash@{1}');
+
+  assert.deepEqual(calls.map((call) => call.args), [
+    ['-C', '/workspace/repo', 'stash', 'push', '-m', 'WIP: 修复 $PATH'],
+    ['-C', '/workspace/repo', 'stash', 'list', '--format=%gd%x00%gs%x00'],
+    ['-C', '/workspace/repo', 'stash', 'apply', 'stash@{1}'],
+  ]);
+  assert.deepEqual(stashes, [
+    { ref: 'stash@{0}', description: 'On main: WIP: first' },
+    { ref: 'stash@{1}', description: 'On feature/x: 修复: second item' },
+  ]);
+});
+
+test('git cli returns an empty stash list for empty output', async () => {
+  const cli = new GitCli(async () => ({ stdout: '', stderr: '' }));
+
+  assert.deepEqual(await cli.listStashes('/workspace/repo'), []);
+});
+
+test('git cli rejects malformed stash list records', async () => {
+  const cli = new GitCli(async () => ({ stdout: 'stash@{0}\0\0', stderr: '' }));
+
+  await assert.rejects(
+    () => cli.listStashes('/workspace/repo'),
+    /Invalid git stash list output/,
+  );
+});

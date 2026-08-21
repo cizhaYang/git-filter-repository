@@ -75,6 +75,7 @@
 **配置项**：
 - `scmRepositoryFilter.scanMode`（`'pinned'` | `'all'`，默认 `'pinned'`）— `pinned` 只扫描/刷新固定仓库（嵌套仓库多、只关注少数仓库时的性能模式）；`all` 递归扫描工作区全部仓库（兼容旧行为）。
 - `scmRepositoryFilter.pinnedRepositories`（`string[]`）— 固定仓库列表，存**相对工作区根的路径**（如 `originSource/acme/address`）。添加命令接受后缀（`acme/address`）做唯一匹配后转存相对路径；固定仓库在两种模式下都常驻显示（pin 图标），撤销后随配置即时重建。
+- 工作区根仓库（会话级）— `WorkspaceRepositoryScanner.scanWorkspaceRoots` 确认工作区根目录自身存在 `.git` 后自动加入常驻集合；两种模式都显示，但不写入 pinned 配置、不显示 pin 图标，也不提供 Unpin。
 - `ExtensionContext.globalState.pinnedRepositoryHistory`（`string[]`）— 用户级固定仓库历史，存规范化相对路径。Pin 与扩展激活会合并历史；历史管理命令只在用户确认导入时写当前工作区配置，删除历史不影响当前配置。
 
 ## 改动边界

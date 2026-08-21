@@ -46,6 +46,8 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   private readonly repositorySubscriptions = new Map<string, vscode.Disposable[]>();
   private readonly pendingStatusRepositories = new Set<GitRepositoryLike>();
   private readonly repositories = new Map<string, GitRepositoryLike>();
+  /** 工作区根目录自身即 Git 仓库时作为主工程常驻；该集合不等同于用户手动固定配置。 */
+  private readonly workspaceRootRepositories = new Set<string>();
   private readonly workspaceRoots: readonly string[];
   private readonly scanner: Pick<WorkspaceRepositoryScanner, 'scan'>
     & Partial<Pick<WorkspaceRepositoryScanner, 'scanWorkspaceRoots'>>;
@@ -95,7 +97,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   async initialize(): Promise<void> {
     const initializationGeneration = ++this.repositoryRefreshGeneration;
     if (this.scanMode === 'pinned') {
-      await this.refreshPinnedRepositories();
+      await this.refreshPinnedRepositories(initializationGeneration);
       return;
     }
     if (this.scanner.scanWorkspaceRoots) {
@@ -104,6 +106,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
         if (initializationGeneration !== this.repositoryRefreshGeneration || this.scanMode !== 'all') {
           return;
         }
+        this.replaceWorkspaceRootRepositories(workspaceRepositories);
         if (workspaceRepositories.length > 0) {
           const repositories = this.replaceRepositories(workspaceRepositories);
           this.refresh();
@@ -121,12 +124,28 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
   }
 
   /**
-   * pinned 模式：不扫描，直接按「工作区根 + 相对路径」解析固定仓库，只建固定仓库对象。
+   * pinned 模式只浅查工作区根目录，不递归扫描；主工程仓库与手动固定仓库都需要常驻。
    */
-  private async refreshPinnedRepositories(): Promise<void> {
-    const repositoryRoots = this.resolvePinnedRoots();
-    const repositories = this.replaceRepositories(repositoryRoots);
-    this.logger?.appendLine(`[scan] Pinned ${this.repositories.size} repositories (no workspace scan).`);
+  private async refreshPinnedRepositories(refreshGeneration: number): Promise<void> {
+    let workspaceRepositories: readonly string[] = [];
+    try {
+      workspaceRepositories = await (this.scanner.scanWorkspaceRoots?.(this.workspaceRoots) ?? Promise.resolve([]));
+    } catch (error) {
+      this.logger?.appendLine(`[scan] Unable to inspect workspace root repositories: ${String(error)}`);
+    }
+    if (refreshGeneration !== this.repositoryRefreshGeneration || this.scanMode !== 'pinned') {
+      return;
+    }
+
+    this.replaceWorkspaceRootRepositories(workspaceRepositories);
+    const repositoryRoots = new Set([
+      ...this.workspaceRootRepositories,
+      ...this.resolvePinnedRoots(),
+    ]);
+    const repositories = this.replaceRepositories([...repositoryRoots]);
+    this.logger?.appendLine(
+      `[scan] Watching ${this.workspaceRootRepositories.size} workspace root and ${this.getPinnedRootSet().size} pinned repositories (no recursive scan).`,
+    );
     this.refresh();
     if (repositories.length === 0) {
       return;
@@ -143,22 +162,28 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     // 避免旧 all 扫描在切回 pinned 后完成并把非固定仓库重新带回视图。
     const refreshGeneration = ++this.repositoryRefreshGeneration;
     if (this.scanMode === 'pinned') {
-      await this.refreshPinnedRepositories();
+      await this.refreshPinnedRepositories(refreshGeneration);
       return;
     }
-    let repositoryRoots: string[];
+    let scannedRepositoryRoots: string[];
     try {
-      repositoryRoots = await this.scanner.scan(this.workspaceRoots);
+      scannedRepositoryRoots = await this.scanner.scan(this.workspaceRoots);
     } catch (error) {
       this.logger?.appendLine(`[scan] Unable to scan workspace repositories: ${String(error)}`);
-      repositoryRoots = [];
+      scannedRepositoryRoots = [];
     }
     if (refreshGeneration !== this.repositoryRefreshGeneration) {
       this.logger?.appendLine('[scan] Ignored stale repository scan result after configuration or scan change.');
       return;
     }
 
-    const repositories = this.replaceRepositories(repositoryRoots);
+    // 递归扫描可能因深度限制或局部 I/O 失败漏项；主工程和手动固定仓库是常驻契约，不能被覆盖掉。
+    const repositoryRoots = new Set([
+      ...scannedRepositoryRoots,
+      ...this.workspaceRootRepositories,
+      ...this.resolvePinnedRoots(),
+    ]);
+    const repositories = this.replaceRepositories([...repositoryRoots]);
     this.logger?.appendLine(`[activate] Watching ${this.repositories.size} workspace Git repositories.`);
     this.refresh();
     if (repositories.length > ASYNC_STATUS_REFRESH_THRESHOLD) {
@@ -173,10 +198,25 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
     return resolvePinnedRootsFromRelative(this.workspaceRoots, this.getPinnedRelativePaths());
   }
 
+  /**
+   * 扫描结果中只有与 VS Code 工作区根路径完全相同的仓库才是主工程，不能把嵌套仓库误标为主工程。
+   */
+  private replaceWorkspaceRootRepositories(repositoryRoots: readonly string[]): void {
+    const scannedRoots = new Set(
+      repositoryRoots.map((rootPath) => path.normalize(path.resolve(rootPath))),
+    );
+    this.workspaceRootRepositories.clear();
+    for (const workspaceRoot of this.workspaceRoots) {
+      const normalizedRoot = path.normalize(path.resolve(workspaceRoot));
+      if (scannedRoots.has(normalizedRoot)) {
+        this.workspaceRootRepositories.add(normalizedRoot);
+      }
+    }
+  }
+
   /** 判断一个仓库根目录是否被固定（用于渲染 pin 图标与定位 Unpin 目标）。 */
   isPinnedRoot(rootPath: string): boolean {
-    const targets = new Set(this.resolvePinnedRoots());
-    return targets.has(path.normalize(path.resolve(rootPath)));
+    return this.getPinnedRootSet().has(path.normalize(path.resolve(rootPath)));
   }
 
   /**
@@ -332,19 +372,27 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
 
   /** 固定仓库根目录集合（每次向量变化/渲染前求一次，避免逐条重复 resolve）。 */
   private getPinnedRootSet(): ReadonlySet<string> {
-    return new Set(this.resolvePinnedRoots());
+    const pinnedRoots = new Set(this.resolvePinnedRoots());
+    // 主工程是自动常驻项；即使旧配置包含其路径，也不能显示 Pin 或提供 Unpin 操作。
+    for (const workspaceRoot of this.workspaceRootRepositories) {
+      pinnedRoots.delete(workspaceRoot);
+    }
+    return pinnedRoots;
   }
 
-  /** 可见仓库列表：all 模式为「改动 ∪ 固定」，pinned 模式为「固定（常驻）」。 */
+  /** 可见仓库列表：all 模式为「改动 ∪ 固定 ∪ 主工程」，pinned 模式只维护两类常驻仓库。 */
   private getVisibleRepositories(): GitRepositoryLike[] {
     if (this.scanMode === 'pinned') {
-      // pinned 模式只建了固定仓库，全部常驻显示（零改动也显示）。
+      // pinned 模式只创建主工程与固定仓库对象，两者即使零改动也都显示。
       return [...this.repositories.values()];
     }
     const pinnedRoots = this.getPinnedRootSet();
     return mergeVisibleRepositories(
       [...this.repositories.values()],
-      (repository) => pinnedRoots.has(path.normalize(repository.rootUri.fsPath)),
+      (repository) => {
+        const rootPath = path.normalize(repository.rootUri.fsPath);
+        return pinnedRoots.has(rootPath) || this.workspaceRootRepositories.has(rootPath);
+      },
     ).map(({ repository }) => repository);
   }
 
@@ -465,7 +513,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
         items.push(new RepositoryTreeItem(
           repository,
           vscode.workspace.getWorkspaceFolder(repository.rootUri) ?? undefined,
-          this.scanMode === 'pinned' || pinnedRoots.has(path.normalize(repository.rootUri.fsPath)),
+          pinnedRoots.has(path.normalize(repository.rootUri.fsPath)),
         ));
       } catch (error) {
         this.logger?.appendLine(`Skipped repository ${repository.rootUri.fsPath}: ${String(error)}`);
@@ -490,6 +538,7 @@ export class ChangedRepositoriesProvider implements vscode.TreeDataProvider<Chan
       this.unwatchRepository(repository);
     }
     this.repositories.clear();
+    this.workspaceRootRepositories.clear();
     for (const subscription of this.subscriptions) {
       subscription.dispose();
     }

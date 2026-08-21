@@ -85,3 +85,65 @@ test('scanner checks workspace root repositories without walking nested folders'
     path.join(root, 'app'),
   ]);
 });
+
+test('workspace root scanning accepts git files, skips missing markers, and deduplicates roots', async (t) => {
+  const root = createWorkspace();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const scanner = new WorkspaceRepositoryScanner();
+  const repositories = await scanner.scanWorkspaceRoots([
+    path.join(root, 'tools'),
+    path.join(root, 'tools'),
+    path.join(root, 'node_modules'),
+  ]);
+
+  assert.deepEqual(repositories, [path.join(root, 'tools')]);
+});
+
+test('workspace root scanning logs one failed root and continues with remaining roots', async () => {
+  const logs = [];
+  const scanner = new WorkspaceRepositoryScanner({
+    fileSystem: {
+      async readDirectory() { return []; },
+      async getPathType(target) {
+        if (target === path.join('/workspace-a', '.git')) {
+          throw new Error('permission denied');
+        }
+        return target === path.join('/workspace-b', '.git') ? 'directory' : 'missing';
+      },
+    },
+    logger: { appendLine(message) { logs.push(message); } },
+  });
+
+  const repositories = await scanner.scanWorkspaceRoots(['/workspace-a', '/workspace-b']);
+
+  assert.deepEqual(repositories, [path.normalize('/workspace-b')]);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /\[scan\].*workspace-a.*permission denied/);
+});
+
+test('recursive scanning skips a directory whose git marker cannot be inspected', async () => {
+  const logs = [];
+  const scanner = new WorkspaceRepositoryScanner({
+    fileSystem: {
+      async readDirectory(directory) {
+        return directory === path.normalize('/workspace')
+          ? [{ name: 'blocked', isDirectory: true }, { name: 'repo', isDirectory: true }]
+          : [];
+      },
+      async getPathType(target) {
+        if (target === path.join('/workspace/blocked', '.git')) {
+          throw new Error('permission denied');
+        }
+        return target === path.join('/workspace/repo', '.git') ? 'directory' : 'missing';
+      },
+    },
+    logger: { appendLine(message) { logs.push(message); } },
+  });
+
+  const repositories = await scanner.scan(['/workspace']);
+
+  assert.deepEqual(repositories, [path.normalize('/workspace/repo')]);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /\[scan\].*blocked.*permission denied/);
+});

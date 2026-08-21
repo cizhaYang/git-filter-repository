@@ -106,6 +106,193 @@ function createRepository(rootPath, dirty) {
   };
 }
 
+test('pinned mode always renders a clean workspace root repository without pin semantics', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const rootRepository = createRepository('/workspace', false);
+  let fullScanCalls = 0;
+  let shallowScanCalls = 0;
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scan: async () => { fullScanCalls += 1; return ['/workspace']; },
+      scanWorkspaceRoots: async () => { shallowScanCalls += 1; return ['/workspace']; },
+    },
+    repositoryFactory: () => rootRepository,
+    scanMode: 'pinned',
+    getPinnedRelativePaths: () => [],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  await provider.initialize();
+
+  const items = provider.getChildren();
+  assert.deepEqual(items.map((item) => item.repository.rootUri.fsPath), ['/workspace']);
+  assert.equal(items[0].contextValue, 'changedRepository');
+  assert.equal(provider.getMessage(), undefined);
+  assert.equal(shallowScanCalls, 1);
+  assert.equal(fullScanCalls, 0);
+});
+
+test('pinned mode keeps the workspace root ordinary while pinned child repositories retain pin semantics', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const repositories = {
+    '/workspace': createRepository('/workspace', false),
+    '/workspace/originSource/acme/stores': createRepository('/workspace/originSource/acme/stores', false),
+  };
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scan: async () => Object.keys(repositories),
+      scanWorkspaceRoots: async () => ['/workspace'],
+    },
+    repositoryFactory: (root) => repositories[root],
+    scanMode: 'pinned',
+    getPinnedRelativePaths: () => ['.', 'originSource/acme/stores'],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  await provider.initialize();
+
+  const items = provider.getChildren();
+  const root = items.find((item) => item.repository.rootUri.fsPath === '/workspace');
+  const child = items.find((item) => item.repository.rootUri.fsPath === '/workspace/originSource/acme/stores');
+  assert.equal(root.contextValue, 'changedRepository');
+  assert.equal(child.contextValue, 'pinnedRepository');
+  assert.equal(provider.isPinnedRoot('/workspace'), false);
+  assert.equal(provider.isPinnedRoot('/workspace/originSource/acme/stores'), true);
+});
+
+test('all mode keeps a clean workspace root visible next to dirty nested repositories', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const repositories = {
+    '/workspace': createRepository('/workspace', false),
+    '/workspace/dirty': createRepository('/workspace/dirty', true),
+    '/workspace/clean': createRepository('/workspace/clean', false),
+  };
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scan: async () => Object.keys(repositories),
+      scanWorkspaceRoots: async () => ['/workspace'],
+    },
+    repositoryFactory: (root) => repositories[root],
+    scanMode: 'all',
+    getPinnedRelativePaths: () => [],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  await provider.initialize();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const items = provider.getChildren();
+  assert.deepEqual(
+    items.map((item) => item.repository.rootUri.fsPath).sort(),
+    ['/workspace', '/workspace/dirty'],
+  );
+  assert.equal(items.find((item) => item.repository.rootUri.fsPath === '/workspace').contextValue, 'changedRepository');
+});
+
+test('all mode keeps workspace root and pinned repositories omitted by the recursive scan', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const repositories = {
+    '/workspace': createRepository('/workspace', false),
+    '/workspace/pinned': createRepository('/workspace/pinned', false),
+    '/workspace/dirty': createRepository('/workspace/dirty', true),
+  };
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scan: async () => ['/workspace/dirty'],
+      scanWorkspaceRoots: async () => ['/workspace'],
+    },
+    repositoryFactory: (root) => repositories[root],
+    scanMode: 'all',
+    getPinnedRelativePaths: () => ['pinned'],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  await provider.initialize();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    provider.getChildren().map((item) => item.repository.rootUri.fsPath).sort(),
+    ['/workspace', '/workspace/dirty', '/workspace/pinned'],
+  );
+});
+
+test('all mode keeps workspace root and pinned repositories when recursive scanning fails', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const repositories = {
+    '/workspace': createRepository('/workspace', false),
+    '/workspace/pinned': createRepository('/workspace/pinned', false),
+  };
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scan: async () => { throw new Error('recursive scan failed'); },
+      scanWorkspaceRoots: async () => ['/workspace'],
+    },
+    repositoryFactory: (root) => repositories[root],
+    scanMode: 'all',
+    getPinnedRelativePaths: () => ['pinned'],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  await provider.initialize();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    provider.getChildren().map((item) => item.repository.rootUri.fsPath).sort(),
+    ['/workspace', '/workspace/pinned'],
+  );
+});
+
+test('pinned mode only keeps workspace roots confirmed by the shallow scan in a multi-root workspace', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const repositories = {
+    '/workspace-a': createRepository('/workspace-a', false),
+    '/workspace-b': createRepository('/workspace-b', false),
+  };
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace-a', '/workspace-b'],
+    scanner: {
+      scan: async () => Object.keys(repositories),
+      scanWorkspaceRoots: async () => ['/workspace-a'],
+    },
+    repositoryFactory: (root) => repositories[root],
+    scanMode: 'pinned',
+    getPinnedRelativePaths: () => [],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  await provider.initialize();
+
+  assert.deepEqual(provider.getChildren().map((item) => item.repository.rootUri.fsPath), ['/workspace-a']);
+});
+
+test('pinned mode keeps fixed repositories when workspace root scanning fails', async (context) => {
+  const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
+  const fixedRepository = createRepository('/workspace/originSource/acme/stores', false);
+  const provider = new ChangedRepositoriesProvider({
+    workspaceRoots: ['/workspace'],
+    scanner: {
+      scan: async () => { throw new Error('permission denied'); },
+      scanWorkspaceRoots: async () => { throw new Error('permission denied'); },
+    },
+    repositoryFactory: () => fixedRepository,
+    scanMode: 'pinned',
+    getPinnedRelativePaths: () => ['originSource/acme/stores'],
+  }, { reconcile() {} }, undefined, 0);
+  context.after(() => provider.dispose());
+
+  await provider.initialize();
+
+  assert.deepEqual(
+    provider.getChildren().map((item) => item.repository.rootUri.fsPath),
+    ['/workspace/originSource/acme/stores'],
+  );
+});
+
 test('pinned mode renders pinned repositories even when they have zero changes', async (context) => {
   const { ChangedRepositoriesProvider } = loadProviderWithVscodeStub();
   const repositories = {

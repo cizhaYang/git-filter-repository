@@ -33,11 +33,23 @@ const nativeFileSystem: WorkspaceRepositoryScannerFileSystem = {
         return 'file';
       }
       return 'missing';
-    } catch {
-      return 'missing';
+    } catch (error) {
+      // 路径不存在是正常扫描结果；权限和 I/O 错误必须保留给扫描层记录，不能静默伪装成非仓库。
+      if (isMissingPathError(error)) {
+        return 'missing';
+      }
+      throw error;
     }
   },
 };
+
+function isMissingPathError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return false;
+  }
+  const code = (error as { code?: unknown }).code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
 
 export class WorkspaceRepositoryScanner {
   private readonly fileSystem: WorkspaceRepositoryScannerFileSystem;
@@ -77,9 +89,14 @@ export class WorkspaceRepositoryScanner {
     const repositories = new Set<string>();
     for (const workspaceRoot of workspaceRoots) {
       const root = path.resolve(workspaceRoot);
-      const gitMarker = await this.fileSystem.getPathType(path.join(root, '.git'));
-      if (gitMarker === 'directory' || gitMarker === 'file') {
-        repositories.add(path.normalize(root));
+      try {
+        const gitMarker = await this.fileSystem.getPathType(path.join(root, '.git'));
+        if (gitMarker === 'directory' || gitMarker === 'file') {
+          repositories.add(path.normalize(root));
+        }
+      } catch (error) {
+        // 多根工作区需要逐根降级，单个路径无权限不能阻断其余主工程仓库识别。
+        this.logger?.appendLine(`[scan] Skipped workspace root ${root}: ${String(error)}`);
       }
     }
     return [...repositories].sort();
@@ -92,7 +109,13 @@ export class WorkspaceRepositoryScanner {
     excludedDirectories: ReadonlySet<string>,
     repositories: Set<string>,
   ): Promise<void> {
-    const gitMarker = await this.fileSystem.getPathType(path.join(directory, '.git'));
+    let gitMarker: 'directory' | 'file' | 'missing';
+    try {
+      gitMarker = await this.fileSystem.getPathType(path.join(directory, '.git'));
+    } catch (error) {
+      this.logger?.appendLine(`[scan] Skipped ${directory}: ${String(error)}`);
+      return;
+    }
     if (gitMarker === 'directory' || gitMarker === 'file') {
       // 父仓库里可能嵌套多个独立仓库；记录当前目录后仍需继续向下扫描。
       repositories.add(path.normalize(directory));

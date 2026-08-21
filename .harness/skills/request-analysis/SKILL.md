@@ -34,6 +34,7 @@ description: 步骤 1 — 需求分析。触发场景："新需求"、"需求分
 - `request_analysis/spec.md`
 - `request_analysis/tasks.md`
 - 更新 `summary.md` 步骤 1 状态为 `DONE`
+- 所有需求分析产物必须位于当前 `.harness/changes/{change-id}/`；禁止把新需求规格写入 `docs/superpowers/` 或其他旁路目录
 
 ## 反模式（不要做）
 - ❌ "我先实现一个 MVP，详情后续讨论"——必须先写完整 spec。
@@ -41,6 +42,8 @@ description: 步骤 1 — 需求分析。触发场景："新需求"、"需求分
 - ❌ 把"重构 + 新功能 + 国际跳转"塞进同一个 change。
 
 ## Checklist
+- [ ] 已先创建并确认当前 `.harness/changes/{change-id}/`，所有需求文档均写入该目录
+- [ ] 未在 `docs/superpowers/` 或其他 Harness 之外的目录新增本次需求规格/计划
 - [ ] spec.md 含 6 个强制章节
 - [ ] 每个 task 含五要素
 - [ ] 验收标准全部可程序化校验（命令、文件、测试结果等）
